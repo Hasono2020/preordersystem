@@ -13,6 +13,11 @@ return new class extends Migration
     {
         Schema::create('payments', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('order_id')->constrained()->cascadeOnDelete();
+            $table->decimal('amount', 10, 2);
+            $table->string('type')->default('down_payment'); // down_payment or remaining
+            $table->date('paid_at');
+            $table->string('note')->nullable();
             $table->timestamps();
         });
     }

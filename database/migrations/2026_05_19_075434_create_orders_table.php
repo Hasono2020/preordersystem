@@ -13,6 +13,19 @@ return new class extends Migration
     {
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('customer_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete(); // sales staff who recorded
+            $table->date('order_date');
+            $table->enum('status', ['bought', 'keep', 'sold_out'])->default('bought');
+            $table->decimal('discount', 10, 2)->default(0);
+            $table->decimal('shipping_fee', 10, 2)->default(0);
+            $table->decimal('shipping_fee_per_kg', 10, 2)->default(0);
+            $table->decimal('total_shipping_fee', 10, 2)->default(0);
+            $table->decimal('down_payment', 10, 2)->default(0);
+            $table->decimal('remaining_payment', 10, 2)->default(0);
+            $table->string('courier')->nullable();
+            $table->decimal('total_price', 10, 2)->default(0);
+            $table->text('notes')->nullable();
             $table->timestamps();
         });
     }
