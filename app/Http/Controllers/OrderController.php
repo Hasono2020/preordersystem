@@ -4,8 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use App\Models\Order;
-use App\Models\OrderItem;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 
 class OrderController extends Controller
@@ -15,7 +15,7 @@ class OrderController extends Controller
         $orders = Order::with(['customer', 'user', 'items'])
             ->when($request->status, fn($q) => $q->where('status', $request->status))
             ->when($request->search, fn($q) => $q->whereHas('customer', fn($q2) =>
-                $q2->where('name', 'like', '%'.$request->search.'%')
+                $q2->where('name', 'like', '%' . $request->search . '%')
             ))
             ->latest()
             ->paginate(20)
@@ -54,9 +54,8 @@ class OrderController extends Controller
             'items.*.price'        => 'required|numeric|min:0',
         ]);
 
-        // Calculate totals
-        $itemsTotal = collect($validated['items'])->sum(fn($i) =>
-            $i['quantity'] * $i['price']
+        $itemsTotal = collect($validated['items'])->sum(
+            fn($i) => $i['quantity'] * $i['price']
         );
 
         $totalPrice = $itemsTotal
@@ -67,7 +66,7 @@ class OrderController extends Controller
 
         $order = Order::create([
             ...$validated,
-            'user_id'           => auth()->id(),
+            'user_id'           => Auth::id(),
             'total_price'       => $totalPrice,
             'remaining_payment' => $remaining,
         ]);
@@ -117,8 +116,8 @@ class OrderController extends Controller
             'items.*.price'        => 'required|numeric|min:0',
         ]);
 
-        $itemsTotal = collect($validated['items'])->sum(fn($i) =>
-            $i['quantity'] * $i['price']
+        $itemsTotal = collect($validated['items'])->sum(
+            fn($i) => $i['quantity'] * $i['price']
         );
 
         $totalPrice = $itemsTotal
@@ -133,7 +132,6 @@ class OrderController extends Controller
             'remaining_payment' => $remaining,
         ]);
 
-        // Replace items
         $order->items()->delete();
         foreach ($validated['items'] as $item) {
             $order->items()->create([
