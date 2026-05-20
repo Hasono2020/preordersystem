@@ -1,26 +1,38 @@
+import { useEffect } from 'react';
 import { Head, useForm, Link } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus, Trash2 } from 'lucide-react';
-import { useEffect } from 'react';
 
 const emptyItem = { product_name: '', color: '', size: '', quantity: 1, price: 0 };
 
-export default function OrderCreate({ customers }: any) {
-    const { data, setData, post, processing, errors } = useForm({
-        customer_id:         '',
-        order_date:          new Date().toISOString().slice(0, 10),
-        status:              'bought',
-        discount:            0,
-        shipping_fee:        0,
-        shipping_fee_per_kg: 0,
-        total_shipping_fee:  0,
-        down_payment:        0,
-        courier:             '',
-        notes:               '',
-        items:               [{ ...emptyItem }],
+export default function OrderEdit({ order, customers }: any) {
+    const { data, setData, patch, processing, errors } = useForm({
+        customer_id:         String(order.customer_id),
+        order_date:          order.order_date,
+        status:              order.status,
+        discount:            Number(order.discount),
+        shipping_fee:        Number(order.shipping_fee),
+        shipping_fee_per_kg: Number(order.shipping_fee_per_kg),
+        total_shipping_fee:  Number(order.total_shipping_fee),
+        down_payment:        Number(order.down_payment),
+        courier:             order.courier ?? '',
+        notes:               order.notes ?? '',
+        items:               order.items.map((i: any) => ({
+            product_name: i.product_name,
+            color:        i.color ?? '',
+            size:         i.size ?? '',
+            quantity:     i.quantity,
+            price:        Number(i.price),
+        })),
     });
+
+    // Auto-calculate total shipping fee
+    useEffect(() => {
+        const total = Number(data.shipping_fee) * Number(data.shipping_fee_per_kg);
+        setData('total_shipping_fee', total);
+    }, [data.shipping_fee, data.shipping_fee_per_kg]);
 
     function addItem() {
         setData('items', [...data.items, { ...emptyItem }]);
@@ -42,22 +54,16 @@ export default function OrderCreate({ customers }: any) {
 
     function submit(e: React.FormEvent) {
         e.preventDefault();
-        post('/orders');
+        patch(`/orders/${order.id}`);
     }
-
-    // Auto-calculate total shipping fee
-    useEffect(() => {
-        const total = Number(data.shipping_fee) * Number(data.shipping_fee_per_kg);
-        setData('total_shipping_fee', total);
-    }, [data.shipping_fee, data.shipping_fee_per_kg]);
 
     return (
         <>
-            <Head title="New Order" />
+            <Head title={`Edit Order #${order.id}`} />
             <div className="p-6 max-w-3xl space-y-6">
                 <div className="flex items-center gap-3">
-                    <Link href="/orders" className="text-muted-foreground hover:text-foreground text-sm">← Back</Link>
-                    <h1 className="text-xl font-semibold">New Order</h1>
+                    <Link href={`/orders/${order.id}`} className="text-muted-foreground hover:text-foreground text-sm">← Back</Link>
+                    <h1 className="text-xl font-semibold">Edit Order #{order.id}</h1>
                 </div>
 
                 <form onSubmit={submit} className="space-y-6">
@@ -160,7 +166,7 @@ export default function OrderCreate({ customers }: any) {
                             <Input type="number" min="0" value={data.shipping_fee_per_kg} onChange={e => setData('shipping_fee_per_kg', Number(e.target.value))} />
                         </div>
                         <div className="space-y-1">
-                           <Label>Total shipping fee</Label>
+                            <Label>Total shipping fee</Label>
                             <div className="rounded-md border px-3 py-2 text-sm bg-muted text-muted-foreground">
                                 {Number(data.total_shipping_fee).toLocaleString()}
                             </div>
@@ -209,11 +215,11 @@ export default function OrderCreate({ customers }: any) {
                         />
                     </div>
 
-                    <Button type="submit" disabled={processing}>Save Order</Button>
+                    <Button type="submit" disabled={processing}>Update Order</Button>
                 </form>
             </div>
         </>
     );
 }
 
-OrderCreate.layout = (page: any) => page;
+OrderEdit.layout = (page: any) => page;

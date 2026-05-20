@@ -82,7 +82,11 @@ export default function OrdersIndex({ orders, filters }: any) {
                         <tbody>
                             {orders.data.map((o: any) => (
                                 <tr key={o.id} className="border-t hover:bg-muted/40">
-                                    <td className="px-4 py-3 whitespace-nowrap">{o.order_date}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap">
+                                        {new Date(o.order_date).toLocaleDateString('en-GB', {
+                                            day: '2-digit', month: 'short', year: 'numeric'
+                                        })}
+                                    </td>
                                     <td className="px-4 py-3 font-medium">{o.customer?.name}</td>
                                     <td className="px-4 py-3">
                                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[o.status]}`}>

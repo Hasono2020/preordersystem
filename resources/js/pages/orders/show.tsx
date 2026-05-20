@@ -42,7 +42,12 @@ export default function OrderShow({ order }: any) {
                 {/* Info grid */}
                 <div className="grid grid-cols-2 gap-4 rounded-lg border p-4 text-sm">
                     <div><span className="text-muted-foreground">Customer</span><p className="font-medium">{order.customer?.name}</p></div>
-                    <div><span className="text-muted-foreground">Date</span><p className="font-medium">{order.order_date}</p></div>
+                    <div><span className="text-muted-foreground">Date</span><p className="font-medium">
+                                                                                {new Date(order.order_date).toLocaleDateString('en-GB', {
+                                                                                    day: '2-digit', month: 'short', year: 'numeric'
+                                                                                })}
+                                                                            </p>
+                    </div>
                     <div><span className="text-muted-foreground">Courier</span><p className="font-medium">{order.courier ?? '—'}</p></div>
                     <div><span className="text-muted-foreground">Recorded by</span><p className="font-medium">{order.user?.name}</p></div>
                     {order.notes && (
