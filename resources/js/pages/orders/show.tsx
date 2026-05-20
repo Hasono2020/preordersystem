@@ -30,9 +30,10 @@ export default function OrderShow({ order }: any) {
                         </span>
                     </div>
                     <div className="flex gap-2">
-                        <Link href={`/customers/${order.customer_id}/print`} target="_blank">
-                            <Button variant="outline" size="sm"><Printer className="size-4 mr-1" /> Print Report</Button>
-                        </Link>
+                        <button onClick={() => window.open(`/customers/${order.customer_id}/print`, '_blank')}
+                            className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-accent transition-colors">
+                            <Printer className="size-4" /> Print Report
+                        </button>
                         <Link href={`/orders/${order.id}/edit`}>
                             <Button variant="outline" size="sm"><Pencil className="size-4 mr-1" /> Edit</Button>
                         </Link>

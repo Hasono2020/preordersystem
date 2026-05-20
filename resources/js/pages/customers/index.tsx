@@ -45,9 +45,10 @@ export default function CustomersIndex({ customers }: any) {
                                     <td className="px-4 py-3 text-muted-foreground">{c.phone ?? '—'}</td>
                                     <td className="px-4 py-3 text-muted-foreground">{c.address ?? '—'}</td>
                                     <td className="px-4 py-3 flex gap-2 justify-end">
-                                        <Link href={`/customers/${c.id}/print`} target="_blank">
-                                            <Button variant="ghost" size="icon"><Printer className="size-4 text-blue-500" /></Button>
-                                        </Link>
+                                        <button onClick={() => window.open(`/customers/${c.id}/print`, '_blank')}
+                                            className="inline-flex items-center justify-center rounded-md h-9 w-9 hover:bg-accent hover:text-accent-foreground">
+                                            <Printer className="size-4 text-blue-500" />
+                                        </button>
                                         <Link href={`/customers/${c.id}/edit`}>
                                             <Button variant="ghost" size="icon"><Pencil className="size-4" /></Button>
                                         </Link>

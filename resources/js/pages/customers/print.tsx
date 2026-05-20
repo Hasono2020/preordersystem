@@ -182,7 +182,7 @@ export default function CustomerPrint({ customer, summary }: any) {
                 <button className="btn-print" onClick={() => window.print()}>
                     🖨️ Print / Save PDF
                 </button>
-                <button className="btn-close" onClick={() => window.close()}>
+                <button className="btn-close" onClick={() => window.history.length > 1 ? window.history.back() : window.close()}>
                     ✕ Close
                 </button>
             </div>
