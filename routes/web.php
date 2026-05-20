@@ -3,6 +3,7 @@
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
@@ -23,9 +24,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('admin')
         ->name('reports.index');
 
-    // Print Specific Order Report
+    // Print customer report
     Route::get('customers/{customer}/print', [CustomerController::class, 'print'])
-    ->name('customers.print');
+        ->name('customers.print');
+
+    // Users — admin only
+    Route::resource('users', UserController::class)
+        ->except(['show'])
+        ->middleware('admin');
 });
 
 require __DIR__.'/settings.php';
