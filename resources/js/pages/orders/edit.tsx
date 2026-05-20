@@ -155,15 +155,15 @@ export default function OrderEdit({ order, customers }: any) {
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
                             <Label>Discount</Label>
-                            <Input type="number" min="0" value={data.discount} onChange={e => setData('discount', Number(e.target.value))} />
+                            <Input type="number" min="0" value={data.discount || ''} onChange={e => setData('discount', parseFloat(e.target.value) || 0)} />
                         </div>
                         <div className="space-y-1">
                             <Label>Shipping fee</Label>
-                            <Input type="number" min="0" value={data.shipping_fee} onChange={e => setData('shipping_fee', Number(e.target.value))} />
+                            <Input type="number" min="0" value={data.shipping_fee} onChange={e => setData('shipping_fee', parseFloat(e.target.value) || 0)} />
                         </div>
                         <div className="space-y-1">
                             <Label>Shipping fee / kg</Label>
-                            <Input type="number" min="0" value={data.shipping_fee_per_kg} onChange={e => setData('shipping_fee_per_kg', Number(e.target.value))} />
+                            <Input type="number" min="0" value={data.shipping_fee_per_kg} onChange={e => setData('shipping_fee_per_kg', parseFloat(e.target.value) || 0)} />
                         </div>
                         <div className="space-y-1">
                             <Label>Total shipping fee</Label>
@@ -173,7 +173,7 @@ export default function OrderEdit({ order, customers }: any) {
                         </div>
                         <div className="space-y-1">
                             <Label>Down payment</Label>
-                            <Input type="number" min="0" value={data.down_payment} onChange={e => setData('down_payment', Number(e.target.value))} />
+                            <Input type="number" min="0" value={data.down_payment} onChange={e => setData('down_payment', parseFloat(e.target.value) || 0)} />
                         </div>
                     </div>
 
