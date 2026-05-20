@@ -1,5 +1,5 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -30,6 +30,9 @@ export default function OrderShow({ order }: any) {
                         </span>
                     </div>
                     <div className="flex gap-2">
+                        <Link href={`/customers/${order.customer_id}/print`} target="_blank">
+                            <Button variant="outline" size="sm"><Printer className="size-4 mr-1" /> Print Report</Button>
+                        </Link>
                         <Link href={`/orders/${order.id}/edit`}>
                             <Button variant="outline" size="sm"><Pencil className="size-4 mr-1" /> Edit</Button>
                         </Link>

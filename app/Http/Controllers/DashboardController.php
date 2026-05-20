@@ -13,9 +13,8 @@ class DashboardController extends Controller
         $stats = [
             'total_orders'     => Order::count(),
             'total_customers'  => Customer::count(),
-            'this_month_sales' => Order::whereMonth('order_date', now()->month)
-                                       ->whereYear('order_date', now()->year)
-                                       ->sum('total_price'),
+            'this_month_sales' => Order::whereRaw("strftime('%Y-%m', order_date) = ?", [now()->format('Y-m')])
+                           ->sum('total_price'),
             'pending_remaining' => Order::where('remaining_payment', '>', 0)->sum('remaining_payment'),
             'recent_orders'    => Order::with(['customer'])
                                        ->latest()

@@ -1,4 +1,4 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import { ShoppingCart, Users, TrendingUp, Clock, ArrowUpRight } from 'lucide-react';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -11,6 +11,8 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function Dashboard({ stats }: any) {
+    const { auth } = usePage().props as any;
+    const isAdmin = auth.user?.role === 'admin';
     const cards = [
         {
             label: 'Total Orders',
@@ -34,7 +36,7 @@ export default function Dashboard({ stats }: any) {
             sub: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
             icon: TrendingUp,
             gradient: 'from-sky-400 to-sky-500',
-            href: '/reports',
+            href: isAdmin ? '/reports' : '/orders',  // 👈 redirect staff to orders instead
         },
         {
             label: 'Pending Payments',

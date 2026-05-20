@@ -15,21 +15,30 @@ class ReportController extends Controller
         $month  = $request->month ?? now()->month;
 
         if ($period === 'daily') {
-            $data = Order::selectRaw('DATE(order_date) as label, COUNT(*) as total_orders, SUM(total_price) as total_sales')
-                ->whereYear('order_date', $year)
-                ->whereMonth('order_date', $month)
+            $data = Order::selectRaw("
+                    DATE(order_date) as label,
+                    COUNT(*) as total_orders,
+                    SUM(total_price) as total_sales
+                ")
+                ->whereRaw("strftime('%Y', order_date) = ?", [(string) $year])
+                ->whereRaw("strftime('%m', order_date) = ?", [str_pad($month, 2, '0', STR_PAD_LEFT)])
                 ->groupBy('label')
                 ->orderBy('label')
                 ->get();
         } else {
-            $data = Order::selectRaw('MONTH(order_date) as month_num, YEAR(order_date) as year_num, COUNT(*) as total_orders, SUM(total_price) as total_sales')
-                ->whereYear('order_date', $year)
+            $data = Order::selectRaw("
+                    strftime('%m', order_date) as month_num,
+                    strftime('%Y', order_date) as year_num,
+                    COUNT(*) as total_orders,
+                    SUM(total_price) as total_sales
+                ")
+                ->whereRaw("strftime('%Y', order_date) = ?", [(string) $year])
                 ->groupBy('year_num', 'month_num')
                 ->orderBy('month_num')
                 ->get()
                 ->map(fn($row) => [
                     ...$row->toArray(),
-                    'label' => date('F', mktime(0, 0, 0, $row->month_num, 1)),
+                    'label' => date('F', mktime(0, 0, 0, (int) $row->month_num, 1)),
                 ]);
         }
 

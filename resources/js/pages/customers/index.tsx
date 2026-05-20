@@ -1,5 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function CustomersIndex({ customers }: any) {
@@ -45,6 +45,9 @@ export default function CustomersIndex({ customers }: any) {
                                     <td className="px-4 py-3 text-muted-foreground">{c.phone ?? '—'}</td>
                                     <td className="px-4 py-3 text-muted-foreground">{c.address ?? '—'}</td>
                                     <td className="px-4 py-3 flex gap-2 justify-end">
+                                        <Link href={`/customers/${c.id}/print`} target="_blank">
+                                            <Button variant="ghost" size="icon"><Printer className="size-4 text-blue-500" /></Button>
+                                        </Link>
                                         <Link href={`/customers/${c.id}/edit`}>
                                             <Button variant="ghost" size="icon"><Pencil className="size-4" /></Button>
                                         </Link>

@@ -58,4 +58,18 @@ class CustomerController extends Controller
         return redirect()->route('customers.index')
             ->with('success', 'Customer deleted.');
     }
+
+    public function print(Customer $customer)
+    {
+        $customer->load(['orders.items']);
+
+        $summary = [
+            'total_orders'    => $customer->orders->count(),
+            'total_sales'     => $customer->orders->sum('total_price'),
+            'total_remaining' => $customer->orders->sum('remaining_payment'),
+            'total_paid'      => $customer->orders->sum('down_payment'),
+        ];
+
+        return Inertia::render('customers/print', compact('customer', 'summary'));
+    }
 }
