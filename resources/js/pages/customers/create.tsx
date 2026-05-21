@@ -3,9 +3,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-export default function CustomerCreate() {
+export default function CustomerCreate({ areas }: any) {
     const { data, setData, post, processing, errors } = useForm({
-        name: '', phone: '', address: '',
+        name: '', phone: '', address: '', area_id: '',
     });
 
     function submit(e: React.FormEvent) {
@@ -40,6 +40,22 @@ export default function CustomerCreate() {
                             value={data.address}
                             onChange={e => setData('address', e.target.value)}
                         />
+                    </div>
+                    <div className="space-y-1">
+                        <Label>Shipping Area</Label>
+                        <select
+                            className="w-full rounded-md border px-3 py-2 text-sm bg-background"
+                            value={data.area_id}
+                            onChange={e => setData('area_id', e.target.value)}
+                        >
+                            <option value="">— No area selected —</option>
+                            {areas.map((area: any) => (
+                                <option key={area.id} value={area.id}>
+                                    {area.name} (Flat: {Number(area.flat_price).toLocaleString()} / Per kg: {Number(area.price_per_kg).toLocaleString()})
+                                </option>
+                            ))}
+                        </select>
+                        {errors.area_id && <p className="text-xs text-destructive">{errors.area_id}</p>}
                     </div>
                     <Button type="submit" disabled={processing}>Save Customer</Button>
                 </form>

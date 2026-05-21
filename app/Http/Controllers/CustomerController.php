@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Customer;
+use App\Models\ShippingArea;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -10,13 +11,14 @@ class CustomerController extends Controller
 {
     public function index()
     {
-        $customers = Customer::latest()->paginate(20);
+        $customers = Customer::with('area')->latest()->paginate(20);
         return Inertia::render('customers/index', compact('customers'));
     }
 
     public function create()
     {
-        return Inertia::render('customers/create');
+        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'flat_price', 'price_per_kg']);
+        return Inertia::render('customers/create', compact('areas'));
     }
 
     public function store(Request $request)
@@ -25,6 +27,7 @@ class CustomerController extends Controller
             'name'    => 'required|string|max:255',
             'phone'   => 'nullable|string|max:50',
             'address' => 'nullable|string',
+            'area_id' => 'nullable|exists:shipping_areas,id',
         ]);
 
         Customer::create($validated);
@@ -35,7 +38,8 @@ class CustomerController extends Controller
 
     public function edit(Customer $customer)
     {
-        return Inertia::render('customers/edit', compact('customer'));
+        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'flat_price', 'price_per_kg']);
+        return Inertia::render('customers/edit', compact('customer', 'areas'));
     }
 
     public function update(Request $request, Customer $customer)
@@ -44,6 +48,7 @@ class CustomerController extends Controller
             'name'    => 'required|string|max:255',
             'phone'   => 'nullable|string|max:50',
             'address' => 'nullable|string',
+            'area_id' => 'nullable|exists:shipping_areas,id',
         ]);
 
         $customer->update($validated);
@@ -61,7 +66,7 @@ class CustomerController extends Controller
 
     public function print(Customer $customer)
     {
-        $customer->load(['orders.items']);
+        $customer->load(['orders.items', 'area']);
 
         $summary = [
             'total_orders'    => $customer->orders->count(),

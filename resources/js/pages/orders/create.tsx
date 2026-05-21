@@ -7,7 +7,7 @@ import { useEffect } from 'react';
 
 const emptyItem = { product_name: '', color: '', size: '', quantity: 1, price: 0 };
 
-export default function OrderCreate({ customers }: any) {
+export default function OrderCreate({ customers, areas }: any) {
     const { data, setData, post, processing, errors } = useForm({
         customer_id:         '',
         order_date:          new Date().toISOString().slice(0, 10),
@@ -20,6 +20,7 @@ export default function OrderCreate({ customers }: any) {
         courier:             '',
         notes:               '',
         items:               [{ ...emptyItem }],
+        area_id:             '',
     });
 
     function addItem() {
@@ -50,6 +51,31 @@ export default function OrderCreate({ customers }: any) {
         const total = Number(data.shipping_fee) * Number(data.shipping_fee_per_kg);
         setData('total_shipping_fee', total);
     }, [data.shipping_fee, data.shipping_fee_per_kg]);
+
+    // Auto-fill shipping fee when customer is selected
+    useEffect(() => {
+        if (data.customer_id) {
+            const customer = customers.find((c: any) => String(c.id) === String(data.customer_id));
+            if (customer?.area_id) {
+                const area = areas.find((a: any) => a.id === customer.area_id);
+                if (area) {
+                    setData(prev => ({
+                        ...prev,
+                        area_id:             String(area.id),
+                        shipping_fee:        Number(area.flat_price),
+                        shipping_fee_per_kg: Number(area.price_per_kg),
+                    }));
+                }
+            } else {
+                setData(prev => ({
+                    ...prev,
+                    area_id:             '',
+                    shipping_fee:        0,
+                    shipping_fee_per_kg: 0,
+                }));
+            }
+        }
+    }, [data.customer_id]);
 
     return (
         <>
@@ -96,6 +122,30 @@ export default function OrderCreate({ customers }: any) {
                         <div className="space-y-1">
                             <Label>Courier</Label>
                             <Input value={data.courier} onChange={e => setData('courier', e.target.value)} placeholder="e.g. JNE, J&T" />
+                        </div>
+
+                        <div className="space-y-1">
+                            <Label>Shipping Area</Label>
+                            <select
+                                className="w-full rounded-md border px-3 py-2 text-sm bg-background"
+                                value={data.area_id}
+                                onChange={e => {
+                                    const area = areas.find((a: any) => String(a.id) === e.target.value);
+                                    setData(prev => ({
+                                        ...prev,
+                                        area_id:             e.target.value,
+                                        shipping_fee:        area ? Number(area.flat_price) : 0,
+                                        shipping_fee_per_kg: area ? Number(area.price_per_kg) : 0,
+                                    }));
+                                }}
+                            >
+                                <option value="">— Select area —</option>
+                                {areas.map((area: any) => (
+                                    <option key={area.id} value={area.id}>
+                                        {area.name} (Flat: {Number(area.flat_price).toLocaleString()} / Per kg: {Number(area.price_per_kg).toLocaleString()})
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                     </div>
 

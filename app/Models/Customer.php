@@ -9,10 +9,15 @@ class Customer extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'phone', 'address'];
+    protected $fillable = ['name', 'phone', 'address', 'area_id'];
 
     public function orders()
     {
         return $this->hasMany(Order::class);
+    }
+
+    public function area()
+    {
+        return $this->belongsTo(ShippingArea::class, 'area_id');
     }
 }

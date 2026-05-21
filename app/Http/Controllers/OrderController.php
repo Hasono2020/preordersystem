@@ -7,6 +7,7 @@ use App\Models\Order;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
+use App\Models\ShippingArea;
 
 class OrderController extends Controller
 {
@@ -29,8 +30,9 @@ class OrderController extends Controller
 
     public function create()
     {
-        $customers = Customer::orderBy('name')->get(['id', 'name']);
-        return Inertia::render('orders/create', compact('customers'));
+        $customers = Customer::with('area')->orderBy('name')->get(['id', 'name', 'area_id']);
+        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'flat_price', 'price_per_kg']);
+        return Inertia::render('orders/create', compact('customers', 'areas'));
     }
 
     public function store(Request $request)
@@ -91,8 +93,9 @@ class OrderController extends Controller
     public function edit(Order $order)
     {
         $order->load('items');
-        $customers = Customer::orderBy('name')->get(['id', 'name']);
-        return Inertia::render('orders/edit', compact('order', 'customers'));
+        $customers = Customer::with('area')->orderBy('name')->get(['id', 'name', 'area_id']);
+        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'flat_price', 'price_per_kg']);
+        return Inertia::render('orders/edit', compact('order', 'customers', 'areas'));
     }
 
     public function update(Request $request, Order $order)
