@@ -1,9 +1,9 @@
+import { useEffect } from 'react';
 import { Head, useForm, Link } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus, Trash2 } from 'lucide-react';
-import { useEffect } from 'react';
 
 const emptyItem = { product_name: '', color: '', size: '', quantity: 1, price: 0 };
 
@@ -16,12 +16,42 @@ export default function OrderCreate({ customers, areas }: any) {
         shipping_fee:        0,
         shipping_fee_per_kg: 0,
         total_shipping_fee:  0,
+        weight:              0,
         down_payment:        0,
         courier:             '',
         notes:               '',
-        items:               [{ ...emptyItem }],
         area_id:             '',
+        items:               [{ ...emptyItem }],
     });
+
+    // Auto-fill shipping_fee_per_kg when customer changes
+    useEffect(() => {
+        if (data.customer_id) {
+            const customer = customers.find((c: any) => String(c.id) === String(data.customer_id));
+            if (customer?.area_id) {
+                const area = areas.find((a: any) => a.id === customer.area_id);
+                if (area) {
+                    setData(prev => ({
+                        ...prev,
+                        area_id:             String(area.id),
+                        shipping_fee_per_kg: Number(area.price_per_kg),
+                    }));
+                }
+            } else {
+                setData(prev => ({
+                    ...prev,
+                    area_id:             '',
+                    shipping_fee_per_kg: 0,
+                }));
+            }
+        }
+    }, [data.customer_id]);
+
+    // Auto-calculate total shipping fee = weight × price_per_kg
+    useEffect(() => {
+        const total = Number(data.weight) * Number(data.shipping_fee_per_kg);
+        setData('total_shipping_fee', total);
+    }, [data.weight, data.shipping_fee_per_kg]);
 
     function addItem() {
         setData('items', [...data.items, { ...emptyItem }]);
@@ -45,37 +75,6 @@ export default function OrderCreate({ customers, areas }: any) {
         e.preventDefault();
         post('/orders');
     }
-
-    // Auto-calculate total shipping fee
-    useEffect(() => {
-        const total = Number(data.shipping_fee) * Number(data.shipping_fee_per_kg);
-        setData('total_shipping_fee', total);
-    }, [data.shipping_fee, data.shipping_fee_per_kg]);
-
-    // Auto-fill shipping fee when customer is selected
-    useEffect(() => {
-        if (data.customer_id) {
-            const customer = customers.find((c: any) => String(c.id) === String(data.customer_id));
-            if (customer?.area_id) {
-                const area = areas.find((a: any) => a.id === customer.area_id);
-                if (area) {
-                    setData(prev => ({
-                        ...prev,
-                        area_id:             String(area.id),
-                        shipping_fee:        Number(area.flat_price),
-                        shipping_fee_per_kg: Number(area.price_per_kg),
-                    }));
-                }
-            } else {
-                setData(prev => ({
-                    ...prev,
-                    area_id:             '',
-                    shipping_fee:        0,
-                    shipping_fee_per_kg: 0,
-                }));
-            }
-        }
-    }, [data.customer_id]);
 
     return (
         <>
@@ -123,30 +122,6 @@ export default function OrderCreate({ customers, areas }: any) {
                             <Label>Courier</Label>
                             <Input value={data.courier} onChange={e => setData('courier', e.target.value)} placeholder="e.g. JNE, J&T" />
                         </div>
-
-                        <div className="space-y-1">
-                            <Label>Shipping Area</Label>
-                            <select
-                                className="w-full rounded-md border px-3 py-2 text-sm bg-background"
-                                value={data.area_id}
-                                onChange={e => {
-                                    const area = areas.find((a: any) => String(a.id) === e.target.value);
-                                    setData(prev => ({
-                                        ...prev,
-                                        area_id:             e.target.value,
-                                        shipping_fee:        area ? Number(area.flat_price) : 0,
-                                        shipping_fee_per_kg: area ? Number(area.price_per_kg) : 0,
-                                    }));
-                                }}
-                            >
-                                <option value="">— Select area —</option>
-                                {areas.map((area: any) => (
-                                    <option key={area.id} value={area.id}>
-                                        {area.name} (Flat: {Number(area.flat_price).toLocaleString()} / Per kg: {Number(area.price_per_kg).toLocaleString()})
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
                     </div>
 
                     {/* Items */}
@@ -177,7 +152,7 @@ export default function OrderCreate({ customers, areas }: any) {
                                             <td className="px-2 py-2"><Input value={item.color} onChange={e => updateItem(i, 'color', e.target.value)} placeholder="Color" /></td>
                                             <td className="px-2 py-2"><Input value={item.size} onChange={e => updateItem(i, 'size', e.target.value)} placeholder="Size" /></td>
                                             <td className="px-2 py-2"><Input type="number" min="1" value={item.quantity} onChange={e => updateItem(i, 'quantity', e.target.value)} className="w-16" /></td>
-                                            <td className="px-2 py-2"><Input type="number" min="0" value={item.price} onChange={e => updateItem(i, 'price', e.target.value)} className="w-28" /></td>
+                                            <td className="px-2 py-2"><Input type="number" min="0" value={item.price || ''} onChange={e => updateItem(i, 'price', parseFloat(e.target.value) || 0)} className="w-28" /></td>
                                             <td className="px-3 py-2 text-right font-medium">
                                                 {(Number(item.quantity) * Number(item.price)).toLocaleString()}
                                             </td>
@@ -195,25 +170,54 @@ export default function OrderCreate({ customers, areas }: any) {
                         </div>
                     </div>
 
-                    {/* Pricing */}
+                    {/* Shipping & Pricing */}
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                            <Label>Discount</Label>
-                            <Input type="number" min="0" value={data.discount || ''} onChange={e => setData('discount', parseFloat(e.target.value) || 0)} />
-                        </div>
-                        <div className="space-y-1">
-                            <Label>Shipping fee</Label>
-                            <Input type="number" min="0" value={data.shipping_fee || ''} onChange={e => setData('shipping_fee', parseFloat(e.target.value) || 0)} />
+                        <div className="space-y-1 col-span-2">
+                            <Label>Shipping Area</Label>
+                            <select
+                                className="w-full rounded-md border px-3 py-2 text-sm bg-background"
+                                value={data.area_id}
+                                onChange={e => {
+                                    const area = areas.find((a: any) => String(a.id) === e.target.value);
+                                    setData(prev => ({
+                                        ...prev,
+                                        area_id:             e.target.value,
+                                        shipping_fee_per_kg: area ? Number(area.price_per_kg) : 0,
+                                    }));
+                                }}
+                            >
+                                <option value="">— Select area —</option>
+                                {areas.map((area: any) => (
+                                    <option key={area.id} value={area.id}>
+                                        {area.name} — {Number(area.price_per_kg).toLocaleString()} / kg
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                         <div className="space-y-1">
                             <Label>Shipping fee / kg</Label>
-                            <Input type="number" min="0" value={data.shipping_fee_per_kg ||''} onChange={e => setData('shipping_fee_per_kg', parseFloat(e.target.value) || 0)} />
+                            <div className="rounded-md border px-3 py-2 text-sm bg-muted text-muted-foreground">
+                                {Number(data.shipping_fee_per_kg).toLocaleString()}
+                            </div>
                         </div>
                         <div className="space-y-1">
-                           <Label>Total shipping fee</Label>
+                            <Label>Weight (kg)</Label>
+                            <Input
+                                type="number" min="0" step="0.1"
+                                value={data.weight || ''}
+                                onChange={e => setData('weight', parseFloat(e.target.value) || 0)}
+                                placeholder="0"
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <Label>Total shipping fee</Label>
                             <div className="rounded-md border px-3 py-2 text-sm bg-muted text-muted-foreground">
                                 {Number(data.total_shipping_fee).toLocaleString()}
                             </div>
+                        </div>
+                        <div className="space-y-1">
+                            <Label>Discount</Label>
+                            <Input type="number" min="0" value={data.discount || ''} onChange={e => setData('discount', parseFloat(e.target.value) || 0)} />
                         </div>
                         <div className="space-y-1">
                             <Label>Down payment</Label>
@@ -232,7 +236,7 @@ export default function OrderCreate({ customers, areas }: any) {
                             <span>- {Number(data.discount).toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between">
-                            <span className="text-muted-foreground">Shipping</span>
+                            <span className="text-muted-foreground">Shipping ({data.weight}kg × {Number(data.shipping_fee_per_kg).toLocaleString()})</span>
                             <span>+ {Number(data.total_shipping_fee).toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between font-semibold border-t pt-2">

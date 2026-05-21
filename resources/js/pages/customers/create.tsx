@@ -51,7 +51,7 @@ export default function CustomerCreate({ areas }: any) {
                             <option value="">— No area selected —</option>
                             {areas.map((area: any) => (
                                 <option key={area.id} value={area.id}>
-                                    {area.name} (Flat: {Number(area.flat_price).toLocaleString()} / Per kg: {Number(area.price_per_kg).toLocaleString()})
+                                    {area.name} — {Number(area.price_per_kg).toLocaleString()} / kg
                                 </option>
                             ))}
                         </select>

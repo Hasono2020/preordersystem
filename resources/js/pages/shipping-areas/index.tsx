@@ -36,7 +36,6 @@ export default function ShippingAreasIndex({ areas }: any) {
                         <thead>
                             <tr className="text-xs text-muted-foreground uppercase tracking-wide border-b bg-muted/30">
                                 <th className="text-left px-6 py-3">Area Name</th>
-                                <th className="text-right px-6 py-3">Flat Shipping Price</th>
                                 <th className="text-right px-6 py-3">Price / kg</th>
                                 <th className="px-6 py-3"></th>
                             </tr>
@@ -46,7 +45,6 @@ export default function ShippingAreasIndex({ areas }: any) {
                                 <tr key={area.id}
                                     className={`border-b last:border-0 hover:bg-muted/30 transition-colors ${idx % 2 === 0 ? '' : 'bg-muted/10'}`}>
                                     <td className="px-6 py-3.5 font-medium">{area.name}</td>
-                                    <td className="px-6 py-3.5 text-right">{Number(area.flat_price).toLocaleString()}</td>
                                     <td className="px-6 py-3.5 text-right">{Number(area.price_per_kg).toLocaleString()}</td>
                                     <td className="px-6 py-3.5 flex gap-2 justify-end">
                                         <Link href={`/shipping-areas/${area.id}/edit`}>
@@ -60,7 +58,7 @@ export default function ShippingAreasIndex({ areas }: any) {
                             ))}
                             {areas.length === 0 && (
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
+                                    <td colSpan={3} className="px-6 py-12 text-center text-muted-foreground">
                                         No shipping areas yet. <Link href="/shipping-areas/create" className="text-primary hover:underline">Add one →</Link>
                                     </td>
                                 </tr>

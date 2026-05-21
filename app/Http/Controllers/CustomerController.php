@@ -17,7 +17,7 @@ class CustomerController extends Controller
 
     public function create()
     {
-        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'flat_price', 'price_per_kg']);
+        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
         return Inertia::render('customers/create', compact('areas'));
     }
 

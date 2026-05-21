@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 
 export default function ShippingAreaCreate() {
     const { data, setData, post, processing, errors } = useForm({
-        name: '', flat_price: '', price_per_kg: '',
+        name: '', price_per_kg: '',
     });
 
     function submit(e: React.FormEvent) {
@@ -27,11 +27,6 @@ export default function ShippingAreaCreate() {
                         <Label>Area Name *</Label>
                         <Input value={data.name} onChange={e => setData('name', e.target.value)} placeholder="e.g. Downtown, North Zone" />
                         {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
-                    </div>
-                    <div className="space-y-1">
-                        <Label>Flat Shipping Price *</Label>
-                        <Input type="number" min="0" value={data.flat_price} onChange={e => setData('flat_price', e.target.value)} placeholder="0" />
-                        {errors.flat_price && <p className="text-xs text-destructive">{errors.flat_price}</p>}
                     </div>
                     <div className="space-y-1">
                         <Label>Price per kg *</Label>

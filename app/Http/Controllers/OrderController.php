@@ -4,10 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use App\Models\Order;
+use App\Models\ShippingArea;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
-use App\Models\ShippingArea;
 
 class OrderController extends Controller
 {
@@ -31,7 +31,7 @@ class OrderController extends Controller
     public function create()
     {
         $customers = Customer::with('area')->orderBy('name')->get(['id', 'name', 'area_id']);
-        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'flat_price', 'price_per_kg']);
+        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
         return Inertia::render('orders/create', compact('customers', 'areas'));
     }
 
@@ -42,9 +42,8 @@ class OrderController extends Controller
             'order_date'           => 'required|date',
             'status'               => 'required|in:bought,keep,sold_out',
             'discount'             => 'nullable|numeric|min:0',
-            'shipping_fee'         => 'nullable|numeric|min:0',
             'shipping_fee_per_kg'  => 'nullable|numeric|min:0',
-            'total_shipping_fee'   => 'nullable|numeric|min:0',
+            'weight'               => 'nullable|numeric|min:0',
             'down_payment'         => 'nullable|numeric|min:0',
             'courier'              => 'nullable|string|max:100',
             'notes'                => 'nullable|string',
@@ -56,21 +55,34 @@ class OrderController extends Controller
             'items.*.price'        => 'required|numeric|min:0',
         ]);
 
+        // Calculate totals
         $itemsTotal = collect($validated['items'])->sum(
             fn($i) => $i['quantity'] * $i['price']
         );
 
+        $totalShipping = ($validated['weight'] ?? 0) * ($validated['shipping_fee_per_kg'] ?? 0);
+
         $totalPrice = $itemsTotal
             - ($validated['discount'] ?? 0)
-            + ($validated['total_shipping_fee'] ?? 0);
+            + $totalShipping;
 
         $remaining = $totalPrice - ($validated['down_payment'] ?? 0);
 
         $order = Order::create([
-            ...$validated,
-            'user_id'           => Auth::id(),
-            'total_price'       => $totalPrice,
-            'remaining_payment' => $remaining,
+            'customer_id'          => $validated['customer_id'],
+            'user_id'              => Auth::id(),
+            'order_date'           => $validated['order_date'],
+            'status'               => $validated['status'],
+            'discount'             => $validated['discount'] ?? 0,
+            'shipping_fee'         => 0,
+            'shipping_fee_per_kg'  => $validated['shipping_fee_per_kg'] ?? 0,
+            'total_shipping_fee'   => $totalShipping,
+            'weight'               => $validated['weight'] ?? 0,
+            'down_payment'         => $validated['down_payment'] ?? 0,
+            'remaining_payment'    => $remaining,
+            'courier'              => $validated['courier'] ?? null,
+            'notes'                => $validated['notes'] ?? null,
+            'total_price'          => $totalPrice,
         ]);
 
         foreach ($validated['items'] as $item) {
@@ -92,9 +104,9 @@ class OrderController extends Controller
 
     public function edit(Order $order)
     {
-        $order->load('items');
+        $order->load(['items', 'customer']);
         $customers = Customer::with('area')->orderBy('name')->get(['id', 'name', 'area_id']);
-        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'flat_price', 'price_per_kg']);
+        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
         return Inertia::render('orders/edit', compact('order', 'customers', 'areas'));
     }
 
@@ -105,9 +117,8 @@ class OrderController extends Controller
             'order_date'           => 'required|date',
             'status'               => 'required|in:bought,keep,sold_out',
             'discount'             => 'nullable|numeric|min:0',
-            'shipping_fee'         => 'nullable|numeric|min:0',
             'shipping_fee_per_kg'  => 'nullable|numeric|min:0',
-            'total_shipping_fee'   => 'nullable|numeric|min:0',
+            'weight'               => 'nullable|numeric|min:0',
             'down_payment'         => 'nullable|numeric|min:0',
             'courier'              => 'nullable|string|max:100',
             'notes'                => 'nullable|string',
@@ -119,22 +130,36 @@ class OrderController extends Controller
             'items.*.price'        => 'required|numeric|min:0',
         ]);
 
+        // Calculate totals
         $itemsTotal = collect($validated['items'])->sum(
             fn($i) => $i['quantity'] * $i['price']
         );
 
+        $totalShipping = ($validated['weight'] ?? 0) * ($validated['shipping_fee_per_kg'] ?? 0);
+
         $totalPrice = $itemsTotal
             - ($validated['discount'] ?? 0)
-            + ($validated['total_shipping_fee'] ?? 0);
+            + $totalShipping;
 
         $remaining = $totalPrice - ($validated['down_payment'] ?? 0);
 
         $order->update([
-            ...$validated,
-            'total_price'       => $totalPrice,
-            'remaining_payment' => $remaining,
+            'customer_id'          => $validated['customer_id'],
+            'order_date'           => $validated['order_date'],
+            'status'               => $validated['status'],
+            'discount'             => $validated['discount'] ?? 0,
+            'shipping_fee'         => 0,
+            'shipping_fee_per_kg'  => $validated['shipping_fee_per_kg'] ?? 0,
+            'total_shipping_fee'   => $totalShipping,
+            'weight'               => $validated['weight'] ?? 0,
+            'down_payment'         => $validated['down_payment'] ?? 0,
+            'remaining_payment'    => $remaining,
+            'courier'              => $validated['courier'] ?? null,
+            'notes'                => $validated['notes'] ?? null,
+            'total_price'          => $totalPrice,
         ]);
 
+        // Replace items
         $order->items()->delete();
         foreach ($validated['items'] as $item) {
             $order->items()->create([

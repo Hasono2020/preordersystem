@@ -6,7 +6,6 @@ import { Label } from '@/components/ui/label';
 export default function ShippingAreaEdit({ shippingArea }: any) {
     const { data, setData, patch, processing, errors } = useForm({
         name:         shippingArea.name,
-        flat_price:   String(shippingArea.flat_price),
         price_per_kg: String(shippingArea.price_per_kg),
     });
 
@@ -29,11 +28,6 @@ export default function ShippingAreaEdit({ shippingArea }: any) {
                         <Label>Area Name *</Label>
                         <Input value={data.name} onChange={e => setData('name', e.target.value)} />
                         {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
-                    </div>
-                    <div className="space-y-1">
-                        <Label>Flat Shipping Price *</Label>
-                        <Input type="number" min="0" value={data.flat_price} onChange={e => setData('flat_price', e.target.value)} />
-                        {errors.flat_price && <p className="text-xs text-destructive">{errors.flat_price}</p>}
                     </div>
                     <div className="space-y-1">
                         <Label>Price per kg *</Label>

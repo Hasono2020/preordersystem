@@ -23,7 +23,6 @@ class ShippingAreaController extends Controller
     {
         $validated = $request->validate([
             'name'         => 'required|string|max:255|unique:shipping_areas,name',
-            'flat_price'   => 'required|numeric|min:0',
             'price_per_kg' => 'required|numeric|min:0',
         ]);
 
@@ -42,7 +41,6 @@ class ShippingAreaController extends Controller
     {
         $validated = $request->validate([
             'name'         => 'required|string|max:255|unique:shipping_areas,name,' . $shippingArea->id,
-            'flat_price'   => 'required|numeric|min:0',
             'price_per_kg' => 'required|numeric|min:0',
         ]);
 
