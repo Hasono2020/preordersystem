@@ -53,7 +53,7 @@ export default function OrderShow({ order }: any) {
                                                                             </p>
                     </div>
                     <div><span className="text-muted-foreground">Courier</span><p className="font-medium">{order.courier ?? '—'}</p></div>
-                    <div><span className="text-muted-foreground">Recorded by</span><p className="font-medium">{order.user?.name}</p></div>
+                    <div><span className="text-muted-foreground">Recorded by</span><p className="font-medium">{order.user?.name ?? <span className="text-muted-foreground italic">Deleted user</span>}</p></div>
                     {order.notes && (
                         <div className="col-span-2"><span className="text-muted-foreground">Notes</span><p>{order.notes}</p></div>
                     )}
