@@ -1,11 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Head, useForm, Link } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus, Trash2 } from 'lucide-react';
 
-const emptyItem = { product_name: '', color: '', size: '', quantity: 1, price: 0 };
+const emptyItem = { product_id: null, product_name: '', color: '', size: '', quantity: 1, price: 0 };
 
 export default function OrderCreate({ customers, areas }: any) {
     const { data, setData, post, processing, errors } = useForm({
@@ -13,7 +13,6 @@ export default function OrderCreate({ customers, areas }: any) {
         order_date:          new Date().toISOString().slice(0, 10),
         status:              'bought',
         discount:            0,
-        shipping_fee:        0,
         shipping_fee_per_kg: 0,
         total_shipping_fee:  0,
         weight:              0,
@@ -23,6 +22,9 @@ export default function OrderCreate({ customers, areas }: any) {
         area_id:             '',
         items:               [{ ...emptyItem }],
     });
+
+    const [productSearch, setProductSearch]   = useState<Record<number, string>>({});
+    const [productResults, setProductResults] = useState<Record<number, any[]>>({});
 
     // Auto-fill shipping_fee_per_kg when customer changes
     useEffect(() => {
@@ -53,12 +55,47 @@ export default function OrderCreate({ customers, areas }: any) {
         setData('total_shipping_fee', total);
     }, [data.weight, data.shipping_fee_per_kg]);
 
+    // Search products from API
+    async function searchProduct(i: number, query: string) {
+        setProductSearch(prev => ({ ...prev, [i]: query }));
+        // Clear product_id if user is typing new search
+        const items = [...data.items];
+        items[i] = { ...items[i], product_id: null, product_name: query };
+        setData('items', items);
+
+        if (query.length < 1) {
+            setProductResults(prev => ({ ...prev, [i]: [] }));
+            return;
+        }
+        const res     = await fetch(`/products-search?q=${encodeURIComponent(query)}`);
+        const results = await res.json();
+        setProductResults(prev => ({ ...prev, [i]: results }));
+    }
+
+    // When user picks a product from dropdown
+    function selectProduct(i: number, product: any) {
+        const items = [...data.items];
+        items[i] = {
+            ...items[i],
+            product_id:   product.id,
+            product_name: product.code + ' — ' + product.name,
+            price:        product.price,
+            color:        '',
+            size:         '',
+        };
+        setData('items', items);
+        setProductSearch(prev => ({ ...prev, [i]: product.code + ' — ' + product.name }));
+        setProductResults(prev => ({ ...prev, [i]: [] }));
+    }
+
     function addItem() {
         setData('items', [...data.items, { ...emptyItem }]);
     }
 
     function removeItem(i: number) {
         setData('items', data.items.filter((_: any, idx: number) => idx !== i));
+        setProductSearch(prev => { const n = { ...prev }; delete n[i]; return n; });
+        setProductResults(prev => { const n = { ...prev }; delete n[i]; return n; });
     }
 
     function updateItem(i: number, field: string, value: any) {
@@ -132,7 +169,7 @@ export default function OrderCreate({ customers, areas }: any) {
                                 <Plus className="size-4 mr-1" /> Add Item
                             </Button>
                         </div>
-                        <div className="rounded-lg border overflow-hidden">
+                        <div className="rounded-lg border overflow-visible">
                             <table className="w-full text-sm">
                                 <thead className="bg-muted text-muted-foreground">
                                     <tr>
@@ -146,25 +183,107 @@ export default function OrderCreate({ customers, areas }: any) {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {data.items.map((item: any, i: number) => (
-                                        <tr key={i} className="border-t">
-                                            <td className="px-2 py-2"><Input value={item.product_name} onChange={e => updateItem(i, 'product_name', e.target.value)} placeholder="Product name" /></td>
-                                            <td className="px-2 py-2"><Input value={item.color} onChange={e => updateItem(i, 'color', e.target.value)} placeholder="Color" /></td>
-                                            <td className="px-2 py-2"><Input value={item.size} onChange={e => updateItem(i, 'size', e.target.value)} placeholder="Size" /></td>
-                                            <td className="px-2 py-2"><Input type="number" min="1" value={item.quantity} onChange={e => updateItem(i, 'quantity', e.target.value)} className="w-16" /></td>
-                                            <td className="px-2 py-2"><Input type="number" min="0" value={item.price || ''} onChange={e => updateItem(i, 'price', parseFloat(e.target.value) || 0)} className="w-28" /></td>
-                                            <td className="px-3 py-2 text-right font-medium">
-                                                {(Number(item.quantity) * Number(item.price)).toLocaleString()}
-                                            </td>
-                                            <td className="px-2 py-2">
-                                                {data.items.length > 1 && (
-                                                    <Button type="button" variant="ghost" size="icon" onClick={() => removeItem(i)}>
-                                                        <Trash2 className="size-4 text-destructive" />
-                                                    </Button>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))}
+                                    {data.items.map((item: any, i: number) => {
+                                        const matched = (productResults[i] ?? []).find((p: any) => p.id === item.product_id);
+                                        const colors  = matched?.colors ?? [];
+                                        const sizes   = matched?.sizes  ?? [];
+
+                                        return (
+                                            <tr key={i} className="border-t">
+                                                {/* Product search */}
+                                                <td className="px-2 py-2 relative min-w-45">
+                                                    <Input
+                                                        value={productSearch[i] ?? item.product_name}
+                                                        onChange={e => searchProduct(i, e.target.value)}
+                                                        placeholder="Search code or name..."
+                                                    />
+                                                    {(productResults[i] ?? []).length > 0 && (
+                                                        <div className="absolute z-20 top-full left-0 w-72 bg-background border rounded-lg shadow-lg mt-1">
+                                                            {productResults[i].map((p: any) => (
+                                                                <button
+                                                                    key={p.id}
+                                                                    type="button"
+                                                                    className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex justify-between items-center gap-2"
+                                                                    onClick={() => selectProduct(i, p)}
+                                                                >
+                                                                    <span>
+                                                                        <span className="font-mono font-semibold">{p.code}</span>
+                                                                        <span className="text-muted-foreground ml-1">— {p.name}</span>
+                                                                    </span>
+                                                                    <span className="text-xs text-muted-foreground shrink-0">
+                                                                        {Number(p.price).toLocaleString()}
+                                                                    </span>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </td>
+
+                                                {/* Color — dropdown if product has colors, else text */}
+                                                <td className="px-2 py-2 min-w-25">
+                                                    {colors.length > 0 ? (
+                                                        <select
+                                                            className="w-full rounded-md border px-2 py-2 text-sm bg-background"
+                                                            value={item.color}
+                                                            onChange={e => updateItem(i, 'color', e.target.value)}
+                                                        >
+                                                            <option value="">Color</option>
+                                                            {colors.map((c: string) => (
+                                                                <option key={c} value={c}>{c}</option>
+                                                            ))}
+                                                        </select>
+                                                    ) : (
+                                                        <Input value={item.color} onChange={e => updateItem(i, 'color', e.target.value)} placeholder="Color" />
+                                                    )}
+                                                </td>
+
+                                                {/* Size — dropdown if product has sizes, else text */}
+                                                <td className="px-2 py-2 min-w-20">
+                                                    {sizes.length > 0 ? (
+                                                        <select
+                                                            className="w-full rounded-md border px-2 py-2 text-sm bg-background"
+                                                            value={item.size}
+                                                            onChange={e => updateItem(i, 'size', e.target.value)}
+                                                        >
+                                                            <option value="">Size</option>
+                                                            {sizes.map((s: string) => (
+                                                                <option key={s} value={s}>{s}</option>
+                                                            ))}
+                                                        </select>
+                                                    ) : (
+                                                        <Input value={item.size} onChange={e => updateItem(i, 'size', e.target.value)} placeholder="Size" />
+                                                    )}
+                                                </td>
+
+                                                <td className="px-2 py-2">
+                                                    <Input
+                                                        type="number" min="1"
+                                                        value={item.quantity}
+                                                        onChange={e => updateItem(i, 'quantity', e.target.value)}
+                                                        className="w-16"
+                                                    />
+                                                </td>
+                                                <td className="px-2 py-2">
+                                                    <Input
+                                                        type="number" min="0"
+                                                        value={item.price || ''}
+                                                        onChange={e => updateItem(i, 'price', parseFloat(e.target.value) || 0)}
+                                                        className="w-28"
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2 text-right font-medium whitespace-nowrap">
+                                                    {(Number(item.quantity) * Number(item.price)).toLocaleString()}
+                                                </td>
+                                                <td className="px-2 py-2">
+                                                    {data.items.length > 1 && (
+                                                        <Button type="button" variant="ghost" size="icon" onClick={() => removeItem(i)}>
+                                                            <Trash2 className="size-4 text-destructive" />
+                                                        </Button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -236,7 +355,9 @@ export default function OrderCreate({ customers, areas }: any) {
                             <span>- {Number(data.discount).toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between">
-                            <span className="text-muted-foreground">Shipping ({data.weight}kg × {Number(data.shipping_fee_per_kg).toLocaleString()})</span>
+                            <span className="text-muted-foreground">
+                                Shipping ({data.weight}kg × {Number(data.shipping_fee_per_kg).toLocaleString()})
+                            </span>
                             <span>+ {Number(data.total_shipping_fee).toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between font-semibold border-t pt-2">

@@ -3,14 +3,15 @@ import { NavUser } from '@/components/nav-user';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { type NavItem } from '@/types';
 import { Link, usePage } from '@inertiajs/react';
-import { LayoutGrid, Users, ShoppingCart, BarChart2, UserCog, MapPin } from 'lucide-react';
+import { LayoutGrid, Users, ShoppingCart, BarChart2, UserCog, MapPin, Package } from 'lucide-react';
 
 const getNavItems = (isAdmin: boolean): NavItem[] => {
     const items: NavItem[] = [
-        { title: 'Dashboard',       href: '/dashboard',       icon: LayoutGrid },
-        { title: 'Customers',       href: '/customers',       icon: Users },
-        { title: 'Orders',          href: '/orders',          icon: ShoppingCart },
-        { title: 'Shipping Areas',  href: '/shipping-areas',  icon: MapPin },
+        { title: 'Dashboard',      href: '/dashboard',      icon: LayoutGrid },
+        { title: 'Customers',      href: '/customers',      icon: Users },
+        { title: 'Orders',         href: '/orders',         icon: ShoppingCart },
+        { title: 'Products',       href: '/products',       icon: Package },
+        { title: 'Shipping Areas', href: '/shipping-areas', icon: MapPin },
     ];
     if (isAdmin) {
         items.push({ title: 'Reports', href: '/reports', icon: BarChart2 });

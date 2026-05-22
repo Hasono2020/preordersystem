@@ -6,6 +6,7 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ShippingAreaController;
+use App\Http\Controllers\ProductController;
 
 Route::inertia('/', 'welcome')->name('home');
 
@@ -37,6 +38,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Shipping Areas — all users
     Route::resource('shipping-areas', ShippingAreaController::class)
         ->except(['show']);
-});
+
+    // Products
+    Route::resource('products', ProductController::class)->except(['show']);
+    Route::get('products-search', [ProductController::class, 'search'])->name('products.search');
+    
+    });
 
 require __DIR__.'/settings.php';
