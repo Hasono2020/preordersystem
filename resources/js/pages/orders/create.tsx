@@ -5,7 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus, Trash2 } from 'lucide-react';
 
-const emptyItem = { product_id: null, product_name: '', color: '', size: '', quantity: 1, price: 0 };
+const emptyItem = { product_id: null, product_name: '', color: '', size: '', quantity: 1, price: 0, weight: 0 };
+
+// Weight rounding: <1200g = 1kg, <2200g = 2kg, etc.
+function calcKg(totalGrams: number): number {
+    if (totalGrams <= 0) return 0;
+    return Math.ceil((totalGrams - 200) / 1000) || 1;
+}
 
 export default function OrderCreate({ customers, areas }: any) {
     const { data, setData, post, processing, errors } = useForm({
@@ -25,6 +31,7 @@ export default function OrderCreate({ customers, areas }: any) {
 
     const [productSearch, setProductSearch]   = useState<Record<number, string>>({});
     const [productResults, setProductResults] = useState<Record<number, any[]>>({});
+    const [selectedProducts, setSelectedProducts] = useState<Record<number, any>>({});
 
     // Auto-fill shipping_fee_per_kg when customer changes
     useEffect(() => {
@@ -49,6 +56,17 @@ export default function OrderCreate({ customers, areas }: any) {
         }
     }, [data.customer_id]);
 
+    // Auto-calculate total weight in kg from all items
+    useEffect(() => {
+        const totalGrams = data.items.reduce((sum: number, item: any) => {
+            const product = selectedProducts[data.items.indexOf(item)];
+            const grams   = product ? Number(product.weight) * Number(item.quantity) : 0;
+            return sum + grams;
+        }, 0);
+        const kg = calcKg(totalGrams);
+        setData(prev => ({ ...prev, weight: kg }));
+    }, [data.items, selectedProducts]);
+
     // Auto-calculate total shipping fee = weight × price_per_kg
     useEffect(() => {
         const total = Number(data.weight) * Number(data.shipping_fee_per_kg);
@@ -58,7 +76,6 @@ export default function OrderCreate({ customers, areas }: any) {
     // Search products from API
     async function searchProduct(i: number, query: string) {
         setProductSearch(prev => ({ ...prev, [i]: query }));
-        // Clear product_id if user is typing new search
         const items = [...data.items];
         items[i] = { ...items[i], product_id: null, product_name: query };
         setData('items', items);
@@ -75,17 +92,23 @@ export default function OrderCreate({ customers, areas }: any) {
     // When user picks a product from dropdown
     function selectProduct(i: number, product: any) {
         const items = [...data.items];
+        // Auto-fill first color and size if available
+        const defaultColor = product.colors?.length > 0 ? product.colors[0] : '';
+        const defaultSize  = product.sizes?.length  > 0 ? product.sizes[0]  : '';
+
         items[i] = {
             ...items[i],
             product_id:   product.id,
             product_name: product.code + ' — ' + product.name,
             price:        product.price,
-            color:        '',
-            size:         '',
+            color:        defaultColor,
+            size:         defaultSize,
+            weight:       product.weight,
         };
         setData('items', items);
         setProductSearch(prev => ({ ...prev, [i]: product.code + ' — ' + product.name }));
         setProductResults(prev => ({ ...prev, [i]: [] }));
+        setSelectedProducts(prev => ({ ...prev, [i]: product }));
     }
 
     function addItem() {
@@ -96,17 +119,24 @@ export default function OrderCreate({ customers, areas }: any) {
         setData('items', data.items.filter((_: any, idx: number) => idx !== i));
         setProductSearch(prev => { const n = { ...prev }; delete n[i]; return n; });
         setProductResults(prev => { const n = { ...prev }; delete n[i]; return n; });
+        setSelectedProducts(prev => { const n = { ...prev }; delete n[i]; return n; });
     }
 
     function updateItem(i: number, field: string, value: any) {
         const items = [...data.items];
-        items[i] = { ...items[i], [field]: value };
+        items[i]    = { ...items[i], [field]: value };
         setData('items', items);
     }
 
     const itemsTotal = data.items.reduce((sum: number, i: any) => sum + (Number(i.quantity) * Number(i.price)), 0);
     const grandTotal = itemsTotal - Number(data.discount) + Number(data.total_shipping_fee);
     const remaining  = grandTotal - Number(data.down_payment);
+
+    // Calculate total grams for display
+    const totalGrams = data.items.reduce((sum: number, item: any, i: number) => {
+        const product = selectedProducts[i];
+        return sum + (product ? Number(product.weight) * Number(item.quantity) : 0);
+    }, 0);
 
     function submit(e: React.FormEvent) {
         e.preventDefault();
@@ -184,7 +214,7 @@ export default function OrderCreate({ customers, areas }: any) {
                                 </thead>
                                 <tbody>
                                     {data.items.map((item: any, i: number) => {
-                                        const matched = (productResults[i] ?? []).find((p: any) => p.id === item.product_id);
+                                        const matched = selectedProducts[i];
                                         const colors  = matched?.colors ?? [];
                                         const sizes   = matched?.sizes  ?? [];
 
@@ -219,7 +249,7 @@ export default function OrderCreate({ customers, areas }: any) {
                                                     )}
                                                 </td>
 
-                                                {/* Color — dropdown if product has colors, else text */}
+                                                {/* Color */}
                                                 <td className="px-2 py-2 min-w-25">
                                                     {colors.length > 0 ? (
                                                         <select
@@ -237,7 +267,7 @@ export default function OrderCreate({ customers, areas }: any) {
                                                     )}
                                                 </td>
 
-                                                {/* Size — dropdown if product has sizes, else text */}
+                                                {/* Size */}
                                                 <td className="px-2 py-2 min-w-20">
                                                     {sizes.length > 0 ? (
                                                         <select
@@ -259,7 +289,7 @@ export default function OrderCreate({ customers, areas }: any) {
                                                     <Input
                                                         type="number" min="1"
                                                         value={item.quantity}
-                                                        onChange={e => updateItem(i, 'quantity', e.target.value)}
+                                                        onChange={e => updateItem(i, 'quantity', parseInt(e.target.value) || 1)}
                                                         className="w-16"
                                                     />
                                                 </td>
@@ -320,13 +350,17 @@ export default function OrderCreate({ customers, areas }: any) {
                             </div>
                         </div>
                         <div className="space-y-1">
-                            <Label>Weight (kg)</Label>
-                            <Input
-                                type="number" min="0" step="0.1"
-                                value={data.weight || ''}
-                                onChange={e => setData('weight', parseFloat(e.target.value) || 0)}
-                                placeholder="0"
-                            />
+                            <Label>
+                                Weight (kg)
+                                {totalGrams > 0 && (
+                                    <span className="ml-2 text-xs text-muted-foreground font-normal">
+                                        ({totalGrams}g → rounded to {data.weight}kg)
+                                    </span>
+                                )}
+                            </Label>
+                            <div className="rounded-md border px-3 py-2 text-sm bg-muted text-muted-foreground">
+                                {data.weight} kg
+                            </div>
                         </div>
                         <div className="space-y-1">
                             <Label>Total shipping fee</Label>
