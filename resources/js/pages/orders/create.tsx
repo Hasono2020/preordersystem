@@ -3,7 +3,7 @@ import { Head, useForm, Link } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Trash2, Users, UserPlus } from 'lucide-react';
+import { Plus, Trash2, Users, UserPlus, ChevronDown } from 'lucide-react';
 
 const emptyItem = { product_id: null, product_name: '', color: '', size: '', quantity: 1, price: 0, weight: 0 };
 
@@ -12,8 +12,15 @@ function calcKg(totalGrams: number): number {
     return Math.ceil((totalGrams - 200) / 1000) || 1;
 }
 
+// Prevent scroll wheel from changing number inputs
+function noScroll(e: React.WheelEvent<HTMLInputElement>) {
+    (e.target as HTMLInputElement).blur();
+}
+
 export default function OrderCreate({ customers, areas }: any) {
-    const [customerMode, setCustomerMode] = useState<'existing' | 'new'>('existing');
+    const [customerMode, setCustomerMode]     = useState<'existing' | 'new'>('existing');
+    const [customerSearch, setCustomerSearch] = useState('');
+    const [showDropdown, setShowDropdown]     = useState(false);
 
     const { data, setData, post, processing, errors } = useForm({
         customer_mode:        'existing',
@@ -38,26 +45,20 @@ export default function OrderCreate({ customers, areas }: any) {
     const [productSearch, setProductSearch]       = useState<Record<number, string>>({});
     const [productResults, setProductResults]     = useState<Record<number, any[]>>({});
     const [selectedProducts, setSelectedProducts] = useState<Record<number, any>>({});
-    const [customerSearch, setCustomerSearch]     = useState('');
-    const [filteredCustomers, setFilteredCustomers] = useState(customers);
 
-    // Sync customer mode to form
+    const filteredCustomers = customerSearch.trim() === ''
+        ? customers
+        : customers.filter((c: any) =>
+            c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+            (c.phone && c.phone.includes(customerSearch))
+          );
+
+    const selectedCustomer = customers.find((c: any) => String(c.id) === String(data.customer_id));
+
+    // Sync customer mode
     useEffect(() => {
         setData('customer_mode', customerMode);
     }, [customerMode]);
-
-    // Filter customers by search
-    useEffect(() => {
-        if (customerSearch.trim() === '') {
-            setFilteredCustomers(customers);
-        } else {
-            setFilteredCustomers(
-                customers.filter((c: any) =>
-                    c.name.toLowerCase().includes(customerSearch.toLowerCase())
-                )
-            );
-        }
-    }, [customerSearch, customers]);
 
     // Auto-fill shipping when existing customer selected
     useEffect(() => {
@@ -92,7 +93,7 @@ export default function OrderCreate({ customers, areas }: any) {
         }
     }, [data.new_customer_area_id, customerMode]);
 
-    // Auto-calculate weight from items
+    // Auto-calculate weight
     useEffect(() => {
         const totalGrams = data.items.reduce((sum: number, item: any, i: number) => {
             const product = selectedProducts[i];
@@ -101,7 +102,7 @@ export default function OrderCreate({ customers, areas }: any) {
         setData(prev => ({ ...prev, weight: calcKg(totalGrams) }));
     }, [data.items, selectedProducts]);
 
-    // Auto-calculate total shipping fee
+    // Auto-calculate shipping fee
     useEffect(() => {
         const total = Number(data.weight) * Number(data.shipping_fee_per_kg);
         setData('total_shipping_fee', total);
@@ -212,32 +213,64 @@ export default function OrderCreate({ customers, areas }: any) {
                         </div>
 
                         {customerMode === 'existing' ? (
-                            <div className="space-y-2">
-                                <Input
-                                    placeholder="Search customer by name..."
-                                    value={customerSearch}
-                                    onChange={e => setCustomerSearch(e.target.value)}
-                                />
-                                <select
-                                    className="w-full rounded-md border px-3 py-2 text-sm bg-background"
-                                    value={data.customer_id}
-                                    onChange={e => setData('customer_id', e.target.value)}
-                                    size={filteredCustomers.length > 5 ? 5 : filteredCustomers.length + 1}
+                            <div className="relative">
+                                {/* Search + trigger */}
+                                <div
+                                    className="w-full rounded-md border px-3 py-2 text-sm bg-background flex items-center justify-between cursor-pointer gap-2"
+                                    onClick={() => setShowDropdown(v => !v)}
                                 >
-                                    <option value="">— Select customer —</option>
-                                    {filteredCustomers.map((c: any) => (
-                                        <option key={c.id} value={c.id}>
-                                            {c.name} {c.phone ? `(${c.phone})` : ''}
-                                        </option>
-                                    ))}
-                                </select>
-                                {errors.customer_id && <p className="text-xs text-destructive">{errors.customer_id}</p>}
-                                {data.customer_id && (
-                                    <div className="text-xs text-muted-foreground bg-muted/30 rounded-lg px-3 py-2">
-                                        Selected: <strong>{customers.find((c: any) => String(c.id) === String(data.customer_id))?.name}</strong>
-                                        {data.shipping_fee_per_kg > 0 && (
-                                            <span className="ml-2">· Shipping rate: {Number(data.shipping_fee_per_kg).toLocaleString()}/kg</span>
-                                        )}
+                                    <span className={selectedCustomer ? 'text-foreground' : 'text-muted-foreground'}>
+                                        {selectedCustomer
+                                            ? `${selectedCustomer.name}${selectedCustomer.phone ? ` (${selectedCustomer.phone})` : ''}`
+                                            : 'Search or select customer...'}
+                                    </span>
+                                    <ChevronDown className="size-4 text-muted-foreground shrink-0" />
+                                </div>
+
+                                {/* Dropdown */}
+                                {showDropdown && (
+                                    <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-background border rounded-xl shadow-lg">
+                                        <div className="p-2 border-b">
+                                            <Input
+                                                autoFocus
+                                                placeholder="Search by name or phone..."
+                                                value={customerSearch}
+                                                onChange={e => setCustomerSearch(e.target.value)}
+                                                onClick={e => e.stopPropagation()}
+                                            />
+                                        </div>
+                                        <div className="max-h-52 overflow-y-auto">
+                                            {filteredCustomers.length === 0 ? (
+                                                <p className="px-3 py-4 text-sm text-center text-muted-foreground">No customers found.</p>
+                                            ) : (
+                                                filteredCustomers.map((c: any) => (
+                                                    <button
+                                                        key={c.id}
+                                                        type="button"
+                                                        className={`w-full text-left px-3 py-2.5 text-sm hover:bg-muted flex justify-between items-center ${
+                                                            String(c.id) === String(data.customer_id) ? 'bg-muted font-medium' : ''
+                                                        }`}
+                                                        onClick={() => {
+                                                            setData('customer_id', String(c.id));
+                                                            setShowDropdown(false);
+                                                            setCustomerSearch('');
+                                                        }}
+                                                    >
+                                                        <span>{c.name}</span>
+                                                        {c.phone && <span className="text-xs text-muted-foreground">{c.phone}</span>}
+                                                    </button>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {errors.customer_id && <p className="text-xs text-destructive mt-1">{errors.customer_id}</p>}
+
+                                {/* Selected info */}
+                                {selectedCustomer && data.shipping_fee_per_kg > 0 && (
+                                    <div className="mt-2 text-xs text-muted-foreground bg-muted/30 rounded-lg px-3 py-2">
+                                        Shipping rate: <strong>{Number(data.shipping_fee_per_kg).toLocaleString()}/kg</strong>
                                     </div>
                                 )}
                             </div>
@@ -421,17 +454,23 @@ export default function OrderCreate({ customers, areas }: any) {
                                                         <Input value={item.size} onChange={e => updateItem(i, 'size', e.target.value)} placeholder="Size" />
                                                     )}
                                                 </td>
+                                                {/* Qty — allows clearing and retyping */}
                                                 <td className="px-2 py-2">
                                                     <Input
-                                                        type="number" min="1"
-                                                        value={item.quantity}
-                                                        onChange={e => updateItem(i, 'quantity', parseInt(e.target.value) || 1)}
+                                                        type="number"
+                                                        min="1"
+                                                        onWheel={noScroll}
+                                                        value={item.quantity === 0 ? '' : item.quantity}
+                                                        onChange={e => updateItem(i, 'quantity', e.target.value === '' ? '' : parseInt(e.target.value) || 1)}
+                                                        onBlur={e => { if (e.target.value === '' || Number(e.target.value) < 1) updateItem(i, 'quantity', 1); }}
                                                         className="w-16"
                                                     />
                                                 </td>
                                                 <td className="px-2 py-2">
                                                     <Input
-                                                        type="number" min="0"
+                                                        type="number"
+                                                        min="0"
+                                                        onWheel={noScroll}
                                                         value={item.price || ''}
                                                         onChange={e => updateItem(i, 'price', parseFloat(e.target.value) || 0)}
                                                         className="w-28"
@@ -484,11 +523,21 @@ export default function OrderCreate({ customers, areas }: any) {
                         </div>
                         <div className="space-y-1">
                             <Label>Discount</Label>
-                            <Input type="number" min="0" value={data.discount || ''} onChange={e => setData('discount', parseFloat(e.target.value) || 0)} />
+                            <Input
+                                type="number" min="0"
+                                onWheel={noScroll}
+                                value={data.discount || ''}
+                                onChange={e => setData('discount', parseFloat(e.target.value) || 0)}
+                            />
                         </div>
                         <div className="space-y-1 col-span-2">
                             <Label>Down payment</Label>
-                            <Input type="number" min="0" value={data.down_payment || ''} onChange={e => setData('down_payment', parseFloat(e.target.value) || 0)} />
+                            <Input
+                                type="number" min="0"
+                                onWheel={noScroll}
+                                value={data.down_payment || ''}
+                                onChange={e => setData('down_payment', parseFloat(e.target.value) || 0)}
+                            />
                         </div>
                     </div>
 

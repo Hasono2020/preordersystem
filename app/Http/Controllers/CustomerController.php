@@ -77,4 +77,20 @@ class CustomerController extends Controller
 
         return Inertia::render('customers/print', compact('customer', 'summary'));
     }
+    
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'ids'   => 'required|array|min:1',
+            'ids.*' => 'exists:customers,id',
+        ]);
+
+        Customer::whereIn('id', $request->ids)->delete();
+
+        $count = count($request->ids);
+
+        return redirect()->route('customers.index')
+            ->with('success', "{$count} customer(s) deleted successfully.");
+    }
+    
 }

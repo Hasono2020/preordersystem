@@ -7,12 +7,19 @@ use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ShippingAreaController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ImportExportController;
 
 Route::inertia('/', 'welcome')->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('dashboard', \App\Http\Controllers\DashboardController::class)->name('dashboard');
+
+    // Delete multiple customers at once
+    Route::delete('customers/bulk-delete', [CustomerController::class, 'bulkDelete'])
+        ->name('customers.bulk-delete');
+
+Route::resource('customers', CustomerController::class)->except(['show']);
 
     // Customers
     Route::resource('customers', CustomerController::class)
@@ -42,6 +49,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Products
     Route::resource('products', ProductController::class)->except(['show']);
     Route::get('products-search', [ProductController::class, 'search'])->name('products.search');
+
+    // Import / Export
+    Route::get('import-export',          [ImportExportController::class, 'index'])->name('import-export.index');
+    Route::post('import-export/preview', [ImportExportController::class, 'preview'])->name('import-export.preview');
+    Route::post('import-export/confirm', [ImportExportController::class, 'import'])->name('import-export.confirm');
+    Route::get('import-export/export',   [ImportExportController::class, 'export'])->name('import-export.export');
     
     });
 
