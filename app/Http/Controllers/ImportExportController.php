@@ -66,12 +66,16 @@ class ImportExportController extends Controller
         foreach ($rows as $i => $row) {
             if ($i <= 1) continue;
 
+            // PHP toArray with false = 0-indexed BUT
+            // sheet->toArray returns associative when columns param is false
+            // Re-index to be safe
+            $row = array_values($row);
+
             $name = trim((string)($row[2] ?? ''));
             $code = trim((string)($row[5] ?? ''));
 
             if ($code === '' || $code === '#N/A') continue;
 
-            // Update customer info if name is filled
             if ($name !== '') {
                 $lastName  = $name;
                 $lastPhone = trim((string)($row[3] ?? ''));
@@ -80,7 +84,7 @@ class ImportExportController extends Controller
 
             if ($lastName === '') continue;
 
-            // Parse date — only update if this row has one
+            // Parse date
             $rawDate = $row[10] ?? null;
             if ($rawDate instanceof \DateTime) {
                 $lastDate = $rawDate->format('Y-m-d');
@@ -92,15 +96,19 @@ class ImportExportController extends Controller
                 try { $lastDate = \Carbon\Carbon::parse((string)$rawDate)->format('Y-m-d'); } catch (\Exception $e) {}
             }
 
-            // Inherit price from previous row if blank
-            $rowPrice = is_numeric($row[8] ?? null) ? (float)$row[8] : null;
-            if ($rowPrice !== null && $rowPrice > 0) {
+            // Price — col index 8
+            $rowPrice = isset($row[8]) && is_numeric($row[8]) && (float)$row[8] > 0
+                ? (float)$row[8]
+                : null;
+            if ($rowPrice !== null) {
                 $lastPrice = $rowPrice;
             }
 
-            // Only update DP if this row has one
-            $rowDP = is_numeric($row[9] ?? null) ? (float)$row[9] : null;
-            if ($rowDP !== null && $rowDP > 0) {
+            // DP — col index 9
+            $rowDP = isset($row[9]) && is_numeric($row[9]) && (float)$row[9] > 0
+                ? (float)$row[9]
+                : null;
+            if ($rowDP !== null) {
                 $lastDP = $rowDP;
             }
 
