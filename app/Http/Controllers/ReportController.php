@@ -18,7 +18,7 @@ class ReportController extends Controller
             $data = Order::selectRaw("
                     DATE(order_date) as label,
                     COUNT(*) as total_orders,
-                    SUM(total_price) as total_sales
+                    SUM(total_price - total_shipping_fee) as total_sales
                 ")
                 ->whereRaw("strftime('%Y', order_date) = ?", [(string) $year])
                 ->whereRaw("strftime('%m', order_date) = ?", [str_pad($month, 2, '0', STR_PAD_LEFT)])
@@ -30,7 +30,7 @@ class ReportController extends Controller
                     strftime('%m', order_date) as month_num,
                     strftime('%Y', order_date) as year_num,
                     COUNT(*) as total_orders,
-                    SUM(total_price) as total_sales
+                    SUM(total_price - total_shipping_fee) as total_sales
                 ")
                 ->whereRaw("strftime('%Y', order_date) = ?", [(string) $year])
                 ->groupBy('year_num', 'month_num')

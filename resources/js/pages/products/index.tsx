@@ -71,13 +71,17 @@ export default function ProductsIndex({ products, filters }: any) {
                                     <td className="px-6 py-3.5 text-right">{Number(p.price).toLocaleString()}</td>
                                     <td className="px-6 py-3.5 text-right text-muted-foreground">{p.weight}g</td>
                                     <td className="px-6 py-3.5 text-right">
-                                        <span className={`font-semibold ${
-                                            p.quantity === 0    ? 'text-red-500' :
-                                            p.quantity < 10     ? 'text-amber-500' :
-                                            'text-green-600'
-                                        }`}>
-                                            {p.quantity}
-                                        </span>
+                                        {p.quantity <= 0 ? (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                                                Out of stock
+                                            </span>
+                                        ) : (
+                                            <span className={`font-semibold ${
+                                                p.quantity < 10 ? 'text-amber-500' : 'text-green-600'
+                                            }`}>
+                                                {p.quantity}
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="px-6 py-3.5">
                                         <div className="flex flex-wrap gap-1">

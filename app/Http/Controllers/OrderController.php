@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use App\Models\Order;
+use App\Models\Product;
 use App\Models\ShippingArea;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -30,15 +31,33 @@ class OrderController extends Controller
 
     public function create()
     {
-        $customers = Customer::with('area')->orderBy('name')->get(['id', 'name', 'area_id']);
+        $customers = Customer::with('area')->orderBy('name')->get(['id', 'name', 'phone', 'area_id']);
         $areas     = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
         return Inertia::render('orders/create', compact('customers', 'areas'));
     }
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'customer_id'          => 'required|exists:customers,id',
+        if ($request->input('customer_mode') === 'new') {
+            $request->validate([
+                'new_customer_name'    => 'required|string|max:255',
+                'new_customer_phone'   => 'nullable|string|max:50',
+                'new_customer_address' => 'nullable|string',
+                'new_customer_area_id' => 'nullable|exists:shipping_areas,id',
+            ]);
+            $customer = Customer::create([
+                'name'    => $request->input('new_customer_name'),
+                'phone'   => $request->input('new_customer_phone'),
+                'address' => $request->input('new_customer_address'),
+                'area_id' => $request->input('new_customer_area_id') ?: null,
+            ]);
+            $customerId = $customer->id;
+        } else {
+            $request->validate(['customer_id' => 'required|exists:customers,id']);
+            $customerId = $request->input('customer_id');
+        }
+
+        $request->validate([
             'order_date'           => 'required|date',
             'status'               => 'required|in:bought,keep,sold_out',
             'discount'             => 'nullable|numeric|min:0',
@@ -56,36 +75,31 @@ class OrderController extends Controller
             'items.*.price'        => 'required|numeric|min:0',
         ]);
 
-        $itemsTotal = collect($validated['items'])->sum(
-            fn($i) => $i['quantity'] * $i['price']
-        );
-
-        $totalShipping = ($validated['weight'] ?? 0) * ($validated['shipping_fee_per_kg'] ?? 0);
-
-        $totalPrice = $itemsTotal
-            - ($validated['discount'] ?? 0)
-            + $totalShipping;
-
-        $remaining = $totalPrice - ($validated['down_payment'] ?? 0);
+        $items         = $request->input('items');
+        $itemsTotal    = collect($items)->sum(fn($i) => $i['quantity'] * $i['price']);
+        $totalShipping = $request->input('weight', 0) * $request->input('shipping_fee_per_kg', 0);
+        $totalPrice    = $itemsTotal - $request->input('discount', 0) + $totalShipping;
+        $remaining     = $totalPrice - $request->input('down_payment', 0);
 
         $order = Order::create([
-            'customer_id'         => $validated['customer_id'],
+            'customer_id'         => $customerId,
             'user_id'             => Auth::id(),
-            'order_date'          => $validated['order_date'],
-            'status'              => $validated['status'],
-            'discount'            => $validated['discount'] ?? 0,
+            'order_date'          => $request->input('order_date'),
+            'status'              => $request->input('status'),
+            'discount'            => $request->input('discount', 0),
             'shipping_fee'        => 0,
-            'shipping_fee_per_kg' => $validated['shipping_fee_per_kg'] ?? 0,
+            'shipping_fee_per_kg' => $request->input('shipping_fee_per_kg', 0),
             'total_shipping_fee'  => $totalShipping,
-            'weight'              => $validated['weight'] ?? 0,
-            'down_payment'        => $validated['down_payment'] ?? 0,
+            'weight'              => $request->input('weight', 0),
+            'down_payment'        => $request->input('down_payment', 0),
             'remaining_payment'   => $remaining,
-            'courier'             => $validated['courier'] ?? null,
-            'notes'               => $validated['notes'] ?? null,
+            'courier'             => $request->input('courier'),
+            'notes'               => $request->input('notes'),
             'total_price'         => $totalPrice,
         ]);
 
-        foreach ($validated['items'] as $item) {
+        // Create items and deduct stock
+        foreach ($items as $item) {
             $order->items()->create([
                 'product_id'   => $item['product_id'] ?? null,
                 'product_name' => $item['product_name'],
@@ -95,6 +109,12 @@ class OrderController extends Controller
                 'price'        => $item['price'],
                 'total_price'  => $item['quantity'] * $item['price'],
             ]);
+
+            // Deduct stock if product is linked
+            if (!empty($item['product_id'])) {
+                Product::where('id', $item['product_id'])
+                    ->decrement('quantity', $item['quantity']);
+            }
         }
 
         return redirect()->route('orders.index')
@@ -110,14 +130,14 @@ class OrderController extends Controller
     public function edit(Order $order)
     {
         $order->load(['items', 'customer']);
-        $customers = Customer::with('area')->orderBy('name')->get(['id', 'name', 'area_id']);
+        $customers = Customer::with('area')->orderBy('name')->get(['id', 'name', 'phone', 'area_id']);
         $areas     = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
         return Inertia::render('orders/edit', compact('order', 'customers', 'areas'));
     }
 
     public function update(Request $request, Order $order)
     {
-        $validated = $request->validate([
+        $request->validate([
             'customer_id'          => 'required|exists:customers,id',
             'order_date'           => 'required|date',
             'status'               => 'required|in:bought,keep,sold_out',
@@ -136,37 +156,40 @@ class OrderController extends Controller
             'items.*.price'        => 'required|numeric|min:0',
         ]);
 
-        $itemsTotal = collect($validated['items'])->sum(
-            fn($i) => $i['quantity'] * $i['price']
-        );
-
-        $totalShipping = ($validated['weight'] ?? 0) * ($validated['shipping_fee_per_kg'] ?? 0);
-
-        $totalPrice = $itemsTotal
-            - ($validated['discount'] ?? 0)
-            + $totalShipping;
-
-        $remaining = $totalPrice - ($validated['down_payment'] ?? 0);
+        $items         = $request->input('items');
+        $itemsTotal    = collect($items)->sum(fn($i) => $i['quantity'] * $i['price']);
+        $totalShipping = $request->input('weight', 0) * $request->input('shipping_fee_per_kg', 0);
+        $totalPrice    = $itemsTotal - $request->input('discount', 0) + $totalShipping;
+        $remaining     = $totalPrice - $request->input('down_payment', 0);
 
         $order->update([
-            'customer_id'         => $validated['customer_id'],
-            'order_date'          => $validated['order_date'],
-            'status'              => $validated['status'],
-            'discount'            => $validated['discount'] ?? 0,
+            'customer_id'         => $request->input('customer_id'),
+            'order_date'          => $request->input('order_date'),
+            'status'              => $request->input('status'),
+            'discount'            => $request->input('discount', 0),
             'shipping_fee'        => 0,
-            'shipping_fee_per_kg' => $validated['shipping_fee_per_kg'] ?? 0,
+            'shipping_fee_per_kg' => $request->input('shipping_fee_per_kg', 0),
             'total_shipping_fee'  => $totalShipping,
-            'weight'              => $validated['weight'] ?? 0,
-            'down_payment'        => $validated['down_payment'] ?? 0,
+            'weight'              => $request->input('weight', 0),
+            'down_payment'        => $request->input('down_payment', 0),
             'remaining_payment'   => $remaining,
-            'courier'             => $validated['courier'] ?? null,
-            'notes'               => $validated['notes'] ?? null,
+            'courier'             => $request->input('courier'),
+            'notes'               => $request->input('notes'),
             'total_price'         => $totalPrice,
         ]);
 
-        // Replace items
+        // Restore old stock first
+        $order->load('items');
+        foreach ($order->items as $oldItem) {
+            if ($oldItem->product_id) {
+                Product::where('id', $oldItem->product_id)
+                    ->increment('quantity', $oldItem->quantity);
+            }
+        }
+
+        // Replace items and deduct new stock
         $order->items()->delete();
-        foreach ($validated['items'] as $item) {
+        foreach ($items as $item) {
             $order->items()->create([
                 'product_id'   => $item['product_id'] ?? null,
                 'product_name' => $item['product_name'],
@@ -176,6 +199,12 @@ class OrderController extends Controller
                 'price'        => $item['price'],
                 'total_price'  => $item['quantity'] * $item['price'],
             ]);
+
+            // Deduct new stock
+            if (!empty($item['product_id'])) {
+                Product::where('id', $item['product_id'])
+                    ->decrement('quantity', $item['quantity']);
+            }
         }
 
         return redirect()->route('orders.show', $order)
@@ -184,6 +213,15 @@ class OrderController extends Controller
 
     public function destroy(Order $order)
     {
+        // Restore stock before deleting
+        $order->load('items');
+        foreach ($order->items as $item) {
+            if ($item->product_id) {
+                Product::where('id', $item->product_id)
+                    ->increment('quantity', $item->quantity);
+            }
+        }
+
         $order->delete();
         return redirect()->route('orders.index')
             ->with('success', 'Order deleted.');

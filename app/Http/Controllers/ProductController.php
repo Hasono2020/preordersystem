@@ -103,8 +103,10 @@ class ProductController extends Controller
 
     public function search(Request $request)
     {
-        $products = Product::where('code', 'like', '%'.$request->q.'%')
-            ->orWhere('name', 'like', '%'.$request->q.'%')
+        $products = Product::where(function($q) use ($request) {
+                $q->where('code', 'like', '%'.$request->q.'%')
+                ->orWhere('name', 'like', '%'.$request->q.'%');
+            })
             ->limit(10)
             ->get(['id', 'code', 'name', 'price', 'weight', 'quantity', 'colors', 'sizes']);
 

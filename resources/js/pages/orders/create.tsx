@@ -3,39 +3,65 @@ import { Head, useForm, Link } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Users, UserPlus } from 'lucide-react';
 
 const emptyItem = { product_id: null, product_name: '', color: '', size: '', quantity: 1, price: 0, weight: 0 };
 
-// Weight rounding: <1200g = 1kg, <2200g = 2kg, etc.
 function calcKg(totalGrams: number): number {
     if (totalGrams <= 0) return 0;
     return Math.ceil((totalGrams - 200) / 1000) || 1;
 }
 
 export default function OrderCreate({ customers, areas }: any) {
+    const [customerMode, setCustomerMode] = useState<'existing' | 'new'>('existing');
+
     const { data, setData, post, processing, errors } = useForm({
-        customer_id:         '',
-        order_date:          new Date().toISOString().slice(0, 10),
-        status:              'bought',
-        discount:            0,
-        shipping_fee_per_kg: 0,
-        total_shipping_fee:  0,
-        weight:              0,
-        down_payment:        0,
-        courier:             '',
-        notes:               '',
-        area_id:             '',
-        items:               [{ ...emptyItem }],
+        customer_mode:        'existing',
+        customer_id:          '',
+        new_customer_name:    '',
+        new_customer_phone:   '',
+        new_customer_address: '',
+        new_customer_area_id: '',
+        order_date:           new Date().toISOString().slice(0, 10),
+        status:               'bought',
+        discount:             0,
+        shipping_fee_per_kg:  0,
+        total_shipping_fee:   0,
+        weight:               0,
+        down_payment:         0,
+        courier:              '',
+        notes:                '',
+        area_id:              '',
+        items:                [{ ...emptyItem }],
     });
 
-    const [productSearch, setProductSearch]   = useState<Record<number, string>>({});
-    const [productResults, setProductResults] = useState<Record<number, any[]>>({});
+    const [productSearch, setProductSearch]       = useState<Record<number, string>>({});
+    const [productResults, setProductResults]     = useState<Record<number, any[]>>({});
     const [selectedProducts, setSelectedProducts] = useState<Record<number, any>>({});
+    const [customerSearch, setCustomerSearch]     = useState('');
+    const [filteredCustomers, setFilteredCustomers] = useState(customers);
 
-    // Auto-fill shipping_fee_per_kg when customer changes
+    // Sync customer mode to form
     useEffect(() => {
-        if (data.customer_id) {
+        setData('customer_mode', customerMode);
+    }, [customerMode]);
+
+    // Filter customers by search
+    useEffect(() => {
+        if (customerSearch.trim() === '') {
+            setFilteredCustomers(customers);
+        } else {
+            setFilteredCustomers(
+                customers.filter((c: any) =>
+                    c.name.toLowerCase().includes(customerSearch.toLowerCase())
+                )
+            );
+        }
+    }, [customerSearch, customers]);
+
+    // Auto-fill shipping when existing customer selected
+    useEffect(() => {
+        if (customerMode === 'existing' && data.customer_id) {
             const customer = customers.find((c: any) => String(c.id) === String(data.customer_id));
             if (customer?.area_id) {
                 const area = areas.find((a: any) => a.id === customer.area_id);
@@ -47,39 +73,45 @@ export default function OrderCreate({ customers, areas }: any) {
                     }));
                 }
             } else {
+                setData(prev => ({ ...prev, area_id: '', shipping_fee_per_kg: 0 }));
+            }
+        }
+    }, [data.customer_id, customerMode]);
+
+    // Auto-fill shipping when new customer area selected
+    useEffect(() => {
+        if (customerMode === 'new' && data.new_customer_area_id) {
+            const area = areas.find((a: any) => String(a.id) === String(data.new_customer_area_id));
+            if (area) {
                 setData(prev => ({
                     ...prev,
-                    area_id:             '',
-                    shipping_fee_per_kg: 0,
+                    area_id:             String(area.id),
+                    shipping_fee_per_kg: Number(area.price_per_kg),
                 }));
             }
         }
-    }, [data.customer_id]);
+    }, [data.new_customer_area_id, customerMode]);
 
-    // Auto-calculate total weight in kg from all items
+    // Auto-calculate weight from items
     useEffect(() => {
-        const totalGrams = data.items.reduce((sum: number, item: any) => {
-            const product = selectedProducts[data.items.indexOf(item)];
-            const grams   = product ? Number(product.weight) * Number(item.quantity) : 0;
-            return sum + grams;
+        const totalGrams = data.items.reduce((sum: number, item: any, i: number) => {
+            const product = selectedProducts[i];
+            return sum + (product ? Number(product.weight) * Number(item.quantity) : 0);
         }, 0);
-        const kg = calcKg(totalGrams);
-        setData(prev => ({ ...prev, weight: kg }));
+        setData(prev => ({ ...prev, weight: calcKg(totalGrams) }));
     }, [data.items, selectedProducts]);
 
-    // Auto-calculate total shipping fee = weight × price_per_kg
+    // Auto-calculate total shipping fee
     useEffect(() => {
         const total = Number(data.weight) * Number(data.shipping_fee_per_kg);
         setData('total_shipping_fee', total);
     }, [data.weight, data.shipping_fee_per_kg]);
 
-    // Search products from API
     async function searchProduct(i: number, query: string) {
         setProductSearch(prev => ({ ...prev, [i]: query }));
         const items = [...data.items];
         items[i] = { ...items[i], product_id: null, product_name: query };
         setData('items', items);
-
         if (query.length < 1) {
             setProductResults(prev => ({ ...prev, [i]: [] }));
             return;
@@ -89,13 +121,10 @@ export default function OrderCreate({ customers, areas }: any) {
         setProductResults(prev => ({ ...prev, [i]: results }));
     }
 
-    // When user picks a product from dropdown
     function selectProduct(i: number, product: any) {
-        const items = [...data.items];
-        // Auto-fill first color and size if available
+        const items        = [...data.items];
         const defaultColor = product.colors?.length > 0 ? product.colors[0] : '';
         const defaultSize  = product.sizes?.length  > 0 ? product.sizes[0]  : '';
-
         items[i] = {
             ...items[i],
             product_id:   product.id,
@@ -131,8 +160,6 @@ export default function OrderCreate({ customers, areas }: any) {
     const itemsTotal = data.items.reduce((sum: number, i: any) => sum + (Number(i.quantity) * Number(i.price)), 0);
     const grandTotal = itemsTotal - Number(data.discount) + Number(data.total_shipping_fee);
     const remaining  = grandTotal - Number(data.down_payment);
-
-    // Calculate total grams for display
     const totalGrams = data.items.reduce((sum: number, item: any, i: number) => {
         const product = selectedProducts[i];
         return sum + (product ? Number(product.weight) * Number(item.quantity) : 0);
@@ -153,22 +180,117 @@ export default function OrderCreate({ customers, areas }: any) {
                 </div>
 
                 <form onSubmit={submit} className="space-y-6">
-                    {/* Basic info */}
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                            <Label>Customer *</Label>
-                            <select
-                                className="w-full rounded-md border px-3 py-2 text-sm bg-background"
-                                value={data.customer_id}
-                                onChange={e => setData('customer_id', e.target.value)}
-                            >
-                                <option value="">Select customer...</option>
-                                {customers.map((c: any) => (
-                                    <option key={c.id} value={c.id}>{c.name}</option>
-                                ))}
-                            </select>
-                            {errors.customer_id && <p className="text-xs text-destructive">{errors.customer_id}</p>}
+
+                    {/* Customer Section */}
+                    <div className="rounded-xl border p-4 space-y-4">
+                        <div className="flex items-center justify-between">
+                            <Label className="text-base font-semibold">Customer</Label>
+                            <div className="flex rounded-lg border overflow-hidden text-xs font-medium">
+                                <button
+                                    type="button"
+                                    onClick={() => setCustomerMode('existing')}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
+                                        customerMode === 'existing'
+                                            ? 'bg-primary text-primary-foreground'
+                                            : 'hover:bg-muted'
+                                    }`}
+                                >
+                                    <Users className="size-3" /> Existing
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setCustomerMode('new')}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors border-l ${
+                                        customerMode === 'new'
+                                            ? 'bg-primary text-primary-foreground'
+                                            : 'hover:bg-muted'
+                                    }`}
+                                >
+                                    <UserPlus className="size-3" /> New
+                                </button>
+                            </div>
                         </div>
+
+                        {customerMode === 'existing' ? (
+                            <div className="space-y-2">
+                                <Input
+                                    placeholder="Search customer by name..."
+                                    value={customerSearch}
+                                    onChange={e => setCustomerSearch(e.target.value)}
+                                />
+                                <select
+                                    className="w-full rounded-md border px-3 py-2 text-sm bg-background"
+                                    value={data.customer_id}
+                                    onChange={e => setData('customer_id', e.target.value)}
+                                    size={filteredCustomers.length > 5 ? 5 : filteredCustomers.length + 1}
+                                >
+                                    <option value="">— Select customer —</option>
+                                    {filteredCustomers.map((c: any) => (
+                                        <option key={c.id} value={c.id}>
+                                            {c.name} {c.phone ? `(${c.phone})` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                                {errors.customer_id && <p className="text-xs text-destructive">{errors.customer_id}</p>}
+                                {data.customer_id && (
+                                    <div className="text-xs text-muted-foreground bg-muted/30 rounded-lg px-3 py-2">
+                                        Selected: <strong>{customers.find((c: any) => String(c.id) === String(data.customer_id))?.name}</strong>
+                                        {data.shipping_fee_per_kg > 0 && (
+                                            <span className="ml-2">· Shipping rate: {Number(data.shipping_fee_per_kg).toLocaleString()}/kg</span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1 col-span-2">
+                                    <Label>Name *</Label>
+                                    <Input
+                                        value={data.new_customer_name}
+                                        onChange={e => setData('new_customer_name', e.target.value)}
+                                        placeholder="Customer name"
+                                    />
+                                    {errors.new_customer_name && <p className="text-xs text-destructive">{errors.new_customer_name}</p>}
+                                </div>
+                                <div className="space-y-1">
+                                    <Label>Phone</Label>
+                                    <Input
+                                        value={data.new_customer_phone}
+                                        onChange={e => setData('new_customer_phone', e.target.value)}
+                                        placeholder="e.g. 08123456789"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label>Shipping Area</Label>
+                                    <select
+                                        className="w-full rounded-md border px-3 py-2 text-sm bg-background"
+                                        value={data.new_customer_area_id}
+                                        onChange={e => setData('new_customer_area_id', e.target.value)}
+                                    >
+                                        <option value="">— Select area —</option>
+                                        {areas.map((area: any) => (
+                                            <option key={area.id} value={area.id}>
+                                                {area.name} — {Number(area.price_per_kg).toLocaleString()}/kg
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="space-y-1 col-span-2">
+                                    <Label>Address</Label>
+                                    <textarea
+                                        className="w-full rounded-md border px-3 py-2 text-sm bg-background"
+                                        rows={2}
+                                        value={data.new_customer_address}
+                                        onChange={e => setData('new_customer_address', e.target.value)}
+                                        placeholder="Customer address"
+                                    />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Order Info */}
+                    <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
                             <Label>Order date *</Label>
                             <Input type="date" value={data.order_date} onChange={e => setData('order_date', e.target.value)} />
@@ -185,7 +307,7 @@ export default function OrderCreate({ customers, areas }: any) {
                                 <option value="sold_out">Sold Out</option>
                             </select>
                         </div>
-                        <div className="space-y-1">
+                        <div className="space-y-1 col-span-2">
                             <Label>Courier</Label>
                             <Input value={data.courier} onChange={e => setData('courier', e.target.value)} placeholder="e.g. JNE, J&T" />
                         </div>
@@ -220,7 +342,6 @@ export default function OrderCreate({ customers, areas }: any) {
 
                                         return (
                                             <tr key={i} className="border-t">
-                                                {/* Product search */}
                                                 <td className="px-2 py-2 relative min-w-45">
                                                     <Input
                                                         value={productSearch[i] ?? item.product_name}
@@ -233,23 +354,41 @@ export default function OrderCreate({ customers, areas }: any) {
                                                                 <button
                                                                     key={p.id}
                                                                     type="button"
-                                                                    className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex justify-between items-center gap-2"
-                                                                    onClick={() => selectProduct(i, p)}
+                                                                    disabled={p.quantity <= 0}
+                                                                    className={`w-full text-left px-3 py-2 text-sm flex justify-between items-center gap-2 ${
+                                                                        p.quantity <= 0
+                                                                            ? 'opacity-50 cursor-not-allowed bg-muted/50'
+                                                                            : 'hover:bg-muted'
+                                                                    }`}
+                                                                    onClick={() => p.quantity > 0 && selectProduct(i, p)}
                                                                 >
                                                                     <span>
                                                                         <span className="font-mono font-semibold">{p.code}</span>
                                                                         <span className="text-muted-foreground ml-1">— {p.name}</span>
                                                                     </span>
-                                                                    <span className="text-xs text-muted-foreground shrink-0">
-                                                                        {Number(p.price).toLocaleString()}
+                                                                    <span className="shrink-0 flex items-center gap-2">
+                                                                        <span className="text-xs text-muted-foreground">
+                                                                            {Number(p.price).toLocaleString()}
+                                                                        </span>
+                                                                        {p.quantity <= 0 ? (
+                                                                            <span className="text-xs font-medium text-red-500 bg-red-50 px-1.5 py-0.5 rounded">
+                                                                                Out of stock
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                                                                                p.quantity < 5
+                                                                                    ? 'text-amber-600 bg-amber-50'
+                                                                                    : 'text-green-600 bg-green-50'
+                                                                            }`}>
+                                                                                {p.quantity} left
+                                                                            </span>
+                                                                        )}
                                                                     </span>
                                                                 </button>
                                                             ))}
                                                         </div>
                                                     )}
                                                 </td>
-
-                                                {/* Color */}
                                                 <td className="px-2 py-2 min-w-25">
                                                     {colors.length > 0 ? (
                                                         <select
@@ -266,8 +405,6 @@ export default function OrderCreate({ customers, areas }: any) {
                                                         <Input value={item.color} onChange={e => updateItem(i, 'color', e.target.value)} placeholder="Color" />
                                                     )}
                                                 </td>
-
-                                                {/* Size */}
                                                 <td className="px-2 py-2 min-w-20">
                                                     {sizes.length > 0 ? (
                                                         <select
@@ -284,7 +421,6 @@ export default function OrderCreate({ customers, areas }: any) {
                                                         <Input value={item.size} onChange={e => updateItem(i, 'size', e.target.value)} placeholder="Size" />
                                                     )}
                                                 </td>
-
                                                 <td className="px-2 py-2">
                                                     <Input
                                                         type="number" min="1"
@@ -321,28 +457,6 @@ export default function OrderCreate({ customers, areas }: any) {
 
                     {/* Shipping & Pricing */}
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1 col-span-2">
-                            <Label>Shipping Area</Label>
-                            <select
-                                className="w-full rounded-md border px-3 py-2 text-sm bg-background"
-                                value={data.area_id}
-                                onChange={e => {
-                                    const area = areas.find((a: any) => String(a.id) === e.target.value);
-                                    setData(prev => ({
-                                        ...prev,
-                                        area_id:             e.target.value,
-                                        shipping_fee_per_kg: area ? Number(area.price_per_kg) : 0,
-                                    }));
-                                }}
-                            >
-                                <option value="">— Select area —</option>
-                                {areas.map((area: any) => (
-                                    <option key={area.id} value={area.id}>
-                                        {area.name} — {Number(area.price_per_kg).toLocaleString()} / kg
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
                         <div className="space-y-1">
                             <Label>Shipping fee / kg</Label>
                             <div className="rounded-md border px-3 py-2 text-sm bg-muted text-muted-foreground">
@@ -354,7 +468,7 @@ export default function OrderCreate({ customers, areas }: any) {
                                 Weight (kg)
                                 {totalGrams > 0 && (
                                     <span className="ml-2 text-xs text-muted-foreground font-normal">
-                                        ({totalGrams}g → rounded to {data.weight}kg)
+                                        ({totalGrams}g → {data.weight}kg)
                                     </span>
                                 )}
                             </Label>
@@ -372,7 +486,7 @@ export default function OrderCreate({ customers, areas }: any) {
                             <Label>Discount</Label>
                             <Input type="number" min="0" value={data.discount || ''} onChange={e => setData('discount', parseFloat(e.target.value) || 0)} />
                         </div>
-                        <div className="space-y-1">
+                        <div className="space-y-1 col-span-2">
                             <Label>Down payment</Label>
                             <Input type="number" min="0" value={data.down_payment || ''} onChange={e => setData('down_payment', parseFloat(e.target.value) || 0)} />
                         </div>
