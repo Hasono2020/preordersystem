@@ -59,15 +59,19 @@ class ImportExportController extends Controller
         $lastName  = '';
         $lastPhone = '';
         $lastCity  = '';
+        $lastDP    = 0;
+        $lastDate  = null;
+        $lastPrice = 0;
 
         foreach ($rows as $i => $row) {
-            if ($i <= 1) continue; // Skip title + header rows
+            if ($i <= 1) continue;
 
             $name = trim((string)($row[2] ?? ''));
             $code = trim((string)($row[5] ?? ''));
 
             if ($code === '' || $code === '#N/A') continue;
 
+            // Update customer info if name is filled
             if ($name !== '') {
                 $lastName  = $name;
                 $lastPhone = trim((string)($row[3] ?? ''));
@@ -76,17 +80,28 @@ class ImportExportController extends Controller
 
             if ($lastName === '') continue;
 
-            // Parse date
-            $rawDate   = $row[10] ?? null;
-            $orderDate = null;
+            // Parse date — only update if this row has one
+            $rawDate = $row[10] ?? null;
             if ($rawDate instanceof \DateTime) {
-                $orderDate = $rawDate->format('Y-m-d');
+                $lastDate = $rawDate->format('Y-m-d');
             } elseif ($rawDate && is_numeric($rawDate)) {
                 try {
-                    $orderDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float)$rawDate)->format('Y-m-d');
+                    $lastDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float)$rawDate)->format('Y-m-d');
                 } catch (\Exception $e) {}
             } elseif ($rawDate) {
-                try { $orderDate = \Carbon\Carbon::parse((string)$rawDate)->format('Y-m-d'); } catch (\Exception $e) {}
+                try { $lastDate = \Carbon\Carbon::parse((string)$rawDate)->format('Y-m-d'); } catch (\Exception $e) {}
+            }
+
+            // Inherit price from previous row if blank
+            $rowPrice = is_numeric($row[8] ?? null) ? (float)$row[8] : null;
+            if ($rowPrice !== null && $rowPrice > 0) {
+                $lastPrice = $rowPrice;
+            }
+
+            // Only update DP if this row has one
+            $rowDP = is_numeric($row[9] ?? null) ? (float)$row[9] : null;
+            if ($rowDP !== null && $rowDP > 0) {
+                $lastDP = $rowDP;
             }
 
             $parsed[] = [
@@ -96,10 +111,11 @@ class ImportExportController extends Controller
                 'product_code' => $code,
                 'color'        => trim((string)($row[6] ?? '')),
                 'size'         => trim((string)($row[7] ?? '')),
-                'price'        => is_numeric($row[8] ?? null) ? (float)$row[8] : 0,
-                'down_payment' => is_numeric($row[9] ?? null) ? (float)$row[9] : 0,
-                'order_date'   => $orderDate ?? now()->format('Y-m-d'),
+                'price'        => $lastPrice,
+                'down_payment' => $lastDP,
+                'order_date'   => $lastDate ?? now()->format('Y-m-d'),
                 'notes'        => trim((string)($row[12] ?? '')),
+                'row_dp'       => $rowDP,
             ];
         }
 
@@ -119,29 +135,50 @@ class ImportExportController extends Controller
         $skipped  = 0;
 
         DB::transaction(function () use ($data, &$imported, &$skipped) {
-            $grouped = [];
+
+            // Group by customer name only
+            $grouped           = [];
+            $customerFirstDate = [];
+
             foreach ($data as $row) {
-                $key = $row['name'] . '||' . $row['order_date'];
-                $grouped[$key][] = $row;
+                $name = $row['name'];
+                if (!isset($customerFirstDate[$name])) {
+                    $customerFirstDate[$name] = $row['order_date'];
+                }
+                $grouped[$name][] = $row;
             }
 
-            foreach ($grouped as $rows) {
+            foreach ($grouped as $customerName => $rows) {
                 $first = $rows[0];
                 try {
+                    // Create one customer per unique name
                     $customer = Customer::create([
                         'name'    => $first['name'],
                         'phone'   => $first['phone'] ?: null,
                         'address' => $first['city'] ?: null,
                     ]);
 
-                    $itemsTotal  = collect($rows)->sum('price');
-                    $downPayment = (float)$first['down_payment'];
-                    $remaining   = $itemsTotal - $downPayment;
+                    // Sum all item prices
+                    $itemsTotal = collect($rows)->sum('price');
+
+                    // Use the first DP found across all rows
+                    $downPayment = 0;
+                    foreach ($rows as $row) {
+                        if (!empty($row['row_dp']) && $row['row_dp'] > 0) {
+                            $downPayment = $row['row_dp'];
+                            break;
+                        }
+                    }
+
+                    $remaining = $itemsTotal - $downPayment;
+
+                    // Use first date seen for this customer
+                    $orderDate = $customerFirstDate[$customerName] ?? now()->format('Y-m-d');
 
                     $order = Order::create([
                         'customer_id'         => $customer->id,
                         'user_id'             => Auth::id(),
-                        'order_date'          => $first['order_date'],
+                        'order_date'          => $orderDate,
                         'status'              => 'bought',
                         'discount'            => 0,
                         'shipping_fee'        => 0,
@@ -187,6 +224,7 @@ class ImportExportController extends Controller
             ->get();
 
         $spreadsheet = new Spreadsheet();
+        /** @var \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet */
         $sheet = $spreadsheet->getActiveSheet() ?? $spreadsheet->createSheet();
         $sheet->setTitle('PO CHN');
 
@@ -256,7 +294,7 @@ class ImportExportController extends Controller
         }
 
         // ── Column widths
-        $widths = [1 => 8, 2 => 6, 3 => 20, 4 => 12, 5 => 15, 6 => 10, 7 => 10, 8 => 8, 9 => 15, 10 => 15, 11 => 12, 12 => 12, 13 => 15];
+        $widths = [1=>8, 2=>6, 3=>20, 4=>12, 5=>15, 6=>10, 7=>10, 8=>8, 9=>15, 10=>15, 11=>12, 12=>12, 13=>15];
         foreach ($widths as $col => $width) {
             $sheet->getColumnDimensionByColumn($col)->setWidth($width);
         }
