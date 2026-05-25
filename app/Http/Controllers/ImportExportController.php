@@ -205,7 +205,7 @@ class ImportExportController extends Controller
 
     public function export()
     {
-        $orders = Order::with(['customer.area', 'items'])
+        $orders = Order::with(['customer.area', 'items', 'payments'])
             ->latest()
             ->get();
 
@@ -240,7 +240,9 @@ class ImportExportController extends Controller
 
         foreach ($orders as $order) {
             $itemsArray = $order->items->values();
-            $totalDP    = $order->down_payment;
+            $totalDP    = $order->down_payment > 0
+                            ? $order->down_payment
+                            : $order->payments->sum('amount');
             $orderDate  = $order->order_date ? $order->order_date->format('Y-m-d') : '';
             $custName   = $order->customer->name ?? '';
             $custPhone  = $order->customer->phone ?? '';
@@ -255,7 +257,9 @@ class ImportExportController extends Controller
                     3  => $isFirst ? $custName  : '',
                     4  => $isFirst ? $custPhone : '',
                     5  => $isFirst ? $custCity  : '',
-                    6  => $item->product_name,
+                    6  => strpos($item->product_name, ' — ') !== false
+                            ? explode(' — ', $item->product_name)[0]
+                            : $item->product_name,
                     7  => $item->color ?? '',
                     8  => $item->size  ?? '',
                     9  => $item->price,
