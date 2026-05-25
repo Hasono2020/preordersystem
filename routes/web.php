@@ -41,10 +41,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->except(['show'])
         ->middleware('admin');
 
-    // FIX 5: Shipping Areas now restricted to admin only
-    Route::resource('shipping-areas', ShippingAreaController::class)
-        ->except(['show'])
-        ->middleware('admin');
+    // Shipping Areas 
+    Route::get('shipping-areas/export',   [ShippingAreaController::class, 'export'])  ->name('shipping-areas.export');
+    Route::get('shipping-areas/template', [ShippingAreaController::class, 'template'])->name('shipping-areas.template');
+    Route::post('shipping-areas/import',  [ShippingAreaController::class, 'import'])  ->name('shipping-areas.import');
+    Route::resource('shipping-areas', ShippingAreaController::class)->except(['show']);
 
     // Products
     Route::resource('products', ProductController::class)->except(['show']);
