@@ -23,8 +23,6 @@ class ImportExportController extends Controller
         return Inertia::render('import-export/index');
     }
 
-    // ─── IMPORT ───────────────────────────────────────────────
-
     public function preview(Request $request)
     {
         $request->validate([
@@ -66,9 +64,6 @@ class ImportExportController extends Controller
         foreach ($rows as $i => $row) {
             if ($i <= 1) continue;
 
-            // PHP toArray with false = 0-indexed BUT
-            // sheet->toArray returns associative when columns param is false
-            // Re-index to be safe
             $row = array_values($row);
 
             $name = trim((string)($row[2] ?? ''));
@@ -84,7 +79,6 @@ class ImportExportController extends Controller
 
             if ($lastName === '') continue;
 
-            // Parse date
             $rawDate = $row[10] ?? null;
             if ($rawDate instanceof \DateTime) {
                 $lastDate = $rawDate->format('Y-m-d');
@@ -96,18 +90,12 @@ class ImportExportController extends Controller
                 try { $lastDate = \Carbon\Carbon::parse((string)$rawDate)->format('Y-m-d'); } catch (\Exception $e) {}
             }
 
-            // Price — col index 8
-            $rowPrice = isset($row[8]) && is_numeric($row[8]) && (float)$row[8] > 0
-                ? (float)$row[8]
-                : null;
+            $rowPrice = isset($row[8]) && is_numeric($row[8]) && (float)$row[8] > 0 ? (float)$row[8] : null;
             if ($rowPrice !== null) {
                 $lastPrice = $rowPrice;
             }
 
-            // DP — col index 9
-            $rowDP = isset($row[9]) && is_numeric($row[9]) && (float)$row[9] > 0
-                ? (float)$row[9]
-                : null;
+            $rowDP = isset($row[9]) && is_numeric($row[9]) && (float)$row[9] > 0 ? (float)$row[9] : null;
             if ($rowDP !== null) {
                 $lastDP = $rowDP;
             }
@@ -143,8 +131,6 @@ class ImportExportController extends Controller
         $skipped  = 0;
 
         DB::transaction(function () use ($data, &$imported, &$skipped) {
-
-            // Group by customer name only
             $grouped           = [];
             $customerFirstDate = [];
 
@@ -159,17 +145,13 @@ class ImportExportController extends Controller
             foreach ($grouped as $customerName => $rows) {
                 $first = $rows[0];
                 try {
-                    // Create one customer per unique name
                     $customer = Customer::create([
                         'name'    => $first['name'],
                         'phone'   => $first['phone'] ?: null,
                         'address' => $first['city'] ?: null,
                     ]);
 
-                    // Sum all item prices
-                    $itemsTotal = collect($rows)->sum('price');
-
-                    // Use the first DP found across all rows
+                    $itemsTotal  = collect($rows)->sum('price');
                     $downPayment = 0;
                     foreach ($rows as $row) {
                         if (!empty($row['row_dp']) && $row['row_dp'] > 0) {
@@ -179,8 +161,6 @@ class ImportExportController extends Controller
                     }
 
                     $remaining = $itemsTotal - $downPayment;
-
-                    // Use first date seen for this customer
                     $orderDate = $customerFirstDate[$customerName] ?? now()->format('Y-m-d');
 
                     $order = Order::create([
@@ -223,8 +203,6 @@ class ImportExportController extends Controller
             ->with('success', "Import complete! {$imported} orders imported, {$skipped} skipped.");
     }
 
-    // ─── EXPORT ───────────────────────────────────────────────
-
     public function export()
     {
         $orders = Order::with(['customer.area', 'items'])
@@ -236,7 +214,6 @@ class ImportExportController extends Controller
         $sheet = $spreadsheet->getActiveSheet() ?? $spreadsheet->createSheet();
         $sheet->setTitle('PO CHN');
 
-        // ── Row 1: Title
         $sheet->mergeCells('A1:M1');
         $sheet->getCell('A1')->setValue('LIST ORDERAN CUSTOMER');
         $sheet->getStyle('A1')->applyFromArray([
@@ -246,7 +223,6 @@ class ImportExportController extends Controller
         ]);
         $sheet->getRowDimension(1)->setRowHeight(25);
 
-        // ── Row 2: Headers
         $headers = ['KET','NO','NAMA','IG/WA','KOTA','KODE','WARNA','SIZE','HARGA SATUAN','DP','TGL DP','AN','KET'];
         foreach ($headers as $col => $header) {
             $colLetter = Coordinate::stringFromColumnIndex($col + 1);
@@ -259,22 +235,19 @@ class ImportExportController extends Controller
             'borders'   => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
         ]);
 
-        // ── Data rows
         $row = 3;
         $no  = 1;
 
         foreach ($orders as $order) {
-            $items      = $order->items;
-            $itemCount  = $items->count();
-            $totalDP    = $order->down_payment; // use order's total DP only
+            $itemsArray = $order->items->values();
+            $totalDP    = $order->down_payment;
             $orderDate  = $order->order_date ? $order->order_date->format('Y-m-d') : '';
             $custName   = $order->customer->name ?? '';
             $custPhone  = $order->customer->phone ?? '';
             $custCity   = $order->customer->area->name ?? $order->customer->address ?? '';
 
-            $itemsArray = $items->values(); // force 0-based index
             foreach ($itemsArray as $idx => $item) {
-                $isFirst = $idx === 0;
+                $isFirst = ($idx === 0);
 
                 $values = [
                     1  => '',
@@ -309,13 +282,11 @@ class ImportExportController extends Controller
             }
         }
 
-        // ── Column widths
         $widths = [1=>8, 2=>6, 3=>20, 4=>12, 5=>15, 6=>10, 7=>10, 8=>8, 9=>15, 10=>15, 11=>12, 12=>12, 13=>15];
         foreach ($widths as $col => $width) {
             $sheet->getColumnDimensionByColumn($col)->setWidth($width);
         }
 
-        // ── Output
         $filename = 'orders_export_' . now()->format('Ymd_His') . '.xlsx';
         $writer   = new Xlsx($spreadsheet);
         $tempFile = tempnam(sys_get_temp_dir(), 'export_');
