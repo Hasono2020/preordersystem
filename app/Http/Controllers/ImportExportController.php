@@ -227,7 +227,7 @@ class ImportExportController extends Controller
 
     public function export()
     {
-        $orders = Order::with(['customer', 'items'])
+        $orders = Order::with(['customer.area', 'items'])
             ->latest()
             ->get();
 
@@ -264,23 +264,32 @@ class ImportExportController extends Controller
         $no  = 1;
 
         foreach ($orders as $order) {
-            $isFirstRow = true;
+            $items      = $order->items;
+            $itemCount  = $items->count();
+            $totalDP    = $order->down_payment; // use order's total DP only
+            $orderDate  = $order->order_date ? $order->order_date->format('Y-m-d') : '';
+            $custName   = $order->customer->name ?? '';
+            $custPhone  = $order->customer->phone ?? '';
+            $custCity   = $order->customer->area->name ?? $order->customer->address ?? '';
 
-            foreach ($order->items as $item) {
+            $itemsArray = $items->values(); // force 0-based index
+            foreach ($itemsArray as $idx => $item) {
+                $isFirst = $idx === 0;
+
                 $values = [
                     1  => '',
                     2  => $no,
-                    3  => $isFirstRow ? ($order->customer->name ?? '') : '',
-                    4  => $isFirstRow ? ($order->customer->phone ?? 'RESL') : '',
-                    5  => $isFirstRow ? ($order->customer->address ?? '') : '',
+                    3  => $isFirst ? $custName  : '',
+                    4  => $isFirst ? $custPhone : '',
+                    5  => $isFirst ? $custCity  : '',
                     6  => $item->product_name,
                     7  => $item->color ?? '',
-                    8  => $item->size ?? '',
+                    8  => $item->size  ?? '',
                     9  => $item->price,
-                    10 => $isFirstRow && $order->down_payment > 0 ? $order->down_payment : '',
-                    11 => $isFirstRow && $order->order_date ? $order->order_date->format('Y-m-d') : '',
-                    12 => $isFirstRow ? ($order->customer->name ?? '') : '',
-                    13 => $isFirstRow ? ($order->notes ?? '') : '',
+                    10 => $isFirst && $totalDP > 0 ? $totalDP : '',
+                    11 => $isFirst ? $orderDate : '',
+                    12 => $isFirst ? $custName  : '',
+                    13 => $isFirst ? ($order->notes ?? '') : '',
                 ];
 
                 foreach ($values as $col => $value) {
@@ -295,7 +304,6 @@ class ImportExportController extends Controller
                     ]],
                 ]);
 
-                $isFirstRow = false;
                 $no++;
                 $row++;
             }
