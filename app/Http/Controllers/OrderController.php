@@ -1,16 +1,4 @@
 <?php
-// ============================================================
-// FIX 3: Wrap store() and update() in DB::transaction() so a
-//         partial failure (e.g. item insert crash) can't leave
-//         the database in a broken half-written state.
-//
-// FIX 4: Validate that down_payment <= total_price so
-//         remaining_payment can never go negative.
-//
-// Also added pessimistic locking on stock decrements to prevent
-// race conditions when two orders for the same product arrive
-// at the same time.
-// ============================================================
 
 namespace App\Http\Controllers;
 
@@ -25,6 +13,16 @@ use Inertia\Inertia;
 
 class OrderController extends Controller
 {
+    // BUG 4 FIX: Only the order's owner or an admin may mutate it.
+    private function authorizeOrder(Order $order): void
+    {
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+        if (!$user->isAdmin() && $order->user_id !== $user->id) {
+            abort(403, 'You are not allowed to modify this order.');
+        }
+    }
+
     public function index(Request $request)
     {
         $orders = Order::with(['customer', 'user', 'items'])
@@ -68,7 +66,6 @@ class OrderController extends Controller
             'discount'             => 'nullable|numeric|min:0',
             'shipping_fee_per_kg'  => 'nullable|numeric|min:0',
             'weight'               => 'nullable|numeric|min:0',
-            // FIX 4: down_payment must be >= 0 (lte:total enforced below after calculation)
             'down_payment'         => 'nullable|numeric|min:0',
             'courier'              => 'nullable|string|max:100',
             'notes'                => 'nullable|string',
@@ -86,12 +83,30 @@ class OrderController extends Controller
         $totalShipping = $request->input('weight', 0) * $request->input('shipping_fee_per_kg', 0);
         $totalPrice    = $itemsTotal - $request->input('discount', 0) + $totalShipping;
 
-        // FIX 4: Cap down_payment at totalPrice so remaining never goes negative
         $downPayment = min($request->input('down_payment', 0), $totalPrice);
         $remaining   = $totalPrice - $downPayment;
 
-        // FIX 3: Wrap everything in a transaction so a crash mid-loop
-        //         doesn't leave a half-created order with wrong stock.
+        // BUG 2 FIX: Pre-check stock for all items before writing anything.
+        // Returns validation errors with the exact product name and available qty.
+        $stockErrors = DB::transaction(function () use ($items) {
+            $errors = [];
+            foreach ($items as $index => $item) {
+                if (!empty($item['product_id'])) {
+                    $product = Product::lockForUpdate()->find($item['product_id']);
+                    if ($product && $product->quantity < $item['quantity']) {
+                        $errors["items.{$index}.quantity"] = [
+                            "Only {$product->quantity} units of \"{$product->name}\" are in stock."
+                        ];
+                    }
+                }
+            }
+            return $errors;
+        });
+
+        if (!empty($stockErrors)) {
+            return back()->withErrors($stockErrors)->withInput();
+        }
+
         $order = DB::transaction(function () use (
             $request, $items, $totalPrice, $totalShipping, $downPayment, $remaining
         ) {
@@ -135,12 +150,10 @@ class OrderController extends Controller
                     'total_price'  => $item['quantity'] * $item['price'],
                 ]);
 
-                // Pessimistic lock prevents two simultaneous orders overselling the same product
                 if (!empty($item['product_id'])) {
-                    $product = Product::lockForUpdate()->find($item['product_id']);
-                    if ($product && $product->quantity >= $item['quantity']) {
-                        $product->decrement('quantity', $item['quantity']);
-                    }
+                    // Stock already verified above; decrement unconditionally.
+                    Product::lockForUpdate()->find($item['product_id'])
+                        ?->decrement('quantity', $item['quantity']);
                 }
             }
 
@@ -159,6 +172,9 @@ class OrderController extends Controller
 
     public function edit(Order $order)
     {
+        // BUG 4 FIX: Only the owner or an admin may open the edit form.
+        $this->authorizeOrder($order);
+
         $order->load(['items', 'customer']);
         $customers = Customer::with('area')->orderBy('name')->get(['id', 'name', 'phone', 'area_id']);
         $areas     = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
@@ -167,6 +183,9 @@ class OrderController extends Controller
 
     public function update(Request $request, Order $order)
     {
+        // BUG 4 FIX: Enforce ownership before applying any changes.
+        $this->authorizeOrder($order);
+
         $request->validate([
             'customer_id'          => 'required|exists:customers,id',
             'order_date'           => 'required|date',
@@ -191,13 +210,43 @@ class OrderController extends Controller
         $totalShipping = $request->input('weight', 0) * $request->input('shipping_fee_per_kg', 0);
         $totalPrice    = $itemsTotal - $request->input('discount', 0) + $totalShipping;
 
-        // FIX 4: Cap down_payment so remaining stays >= 0
         $downPayment = min($request->input('down_payment', 0), $totalPrice);
         $remaining   = $totalPrice - $downPayment;
 
-        // FIX 3: Wrap update + stock restore/re-deduct in a single transaction
+        // BUG 2 FIX: Pre-check stock accounting for what will be restored from
+        // old items. Available = current stock + qty being returned from this order.
+        $stockErrors = DB::transaction(function () use ($order, $items) {
+            $order->load('items');
+
+            $returning = [];
+            foreach ($order->items as $oldItem) {
+                if ($oldItem->product_id) {
+                    $returning[$oldItem->product_id] = ($returning[$oldItem->product_id] ?? 0) + $oldItem->quantity;
+                }
+            }
+
+            $errors = [];
+            foreach ($items as $index => $item) {
+                if (!empty($item['product_id'])) {
+                    $product = Product::lockForUpdate()->find($item['product_id']);
+                    if ($product) {
+                        $available = $product->quantity + ($returning[$product->id] ?? 0);
+                        if ($available < $item['quantity']) {
+                            $errors["items.{$index}.quantity"] = [
+                                "Only {$available} units of \"{$product->name}\" will be available."
+                            ];
+                        }
+                    }
+                }
+            }
+            return $errors;
+        });
+
+        if (!empty($stockErrors)) {
+            return back()->withErrors($stockErrors)->withInput();
+        }
+
         DB::transaction(function () use ($request, $order, $items, $totalPrice, $totalShipping, $downPayment, $remaining) {
-            // Restore old stock first (load inside transaction to be safe)
             $order->load('items');
             foreach ($order->items as $oldItem) {
                 if ($oldItem->product_id) {
@@ -222,7 +271,6 @@ class OrderController extends Controller
                 'total_price'         => $totalPrice,
             ]);
 
-            // Replace items and deduct new stock
             $order->items()->delete();
             foreach ($items as $item) {
                 $order->items()->create([
@@ -236,10 +284,8 @@ class OrderController extends Controller
                 ]);
 
                 if (!empty($item['product_id'])) {
-                    $product = Product::lockForUpdate()->find($item['product_id']);
-                    if ($product && $product->quantity >= $item['quantity']) {
-                        $product->decrement('quantity', $item['quantity']);
-                    }
+                    Product::lockForUpdate()->find($item['product_id'])
+                        ?->decrement('quantity', $item['quantity']);
                 }
             }
         });
@@ -250,7 +296,9 @@ class OrderController extends Controller
 
     public function destroy(Order $order)
     {
-        // FIX 3: Wrap delete + stock restore in a transaction
+        // BUG 4 FIX: Only the owner or an admin may delete an order.
+        $this->authorizeOrder($order);
+
         DB::transaction(function () use ($order) {
             $order->load('items');
             foreach ($order->items as $item) {

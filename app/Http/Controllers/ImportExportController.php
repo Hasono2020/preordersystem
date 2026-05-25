@@ -1,12 +1,4 @@
 <?php
-// ============================================================
-// FIX 6: ImportExportController — log errors instead of
-//         silently swallowing them. The catch block now writes
-//         a warning to the Laravel log so you can see exactly
-//         which rows failed and why.
-//
-// Only the import() method changes; the rest is unchanged.
-// ============================================================
 
 namespace App\Http\Controllers;
 
@@ -17,6 +9,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -39,6 +32,13 @@ class ImportExportController extends Controller
             'file' => 'required|file|mimes:xlsx,xls|max:20480',
         ]);
 
+        // BUG 5 & 6 FIX: Delete any leftover file from a previous upload
+        // before storing the new one, so abandoned files don't accumulate.
+        $oldPath = session('import_path');
+        if ($oldPath && Storage::exists($oldPath)) {
+            Storage::delete($oldPath);
+        }
+
         $path        = $request->file('file')->store('imports');
         $fullPath    = storage_path('app/private/' . $path);
         $spreadsheet = IOFactory::load($fullPath);
@@ -46,6 +46,8 @@ class ImportExportController extends Controller
         $sheetIndex  = array_search('PO CHN', $sheetNames);
 
         if ($sheetIndex === false) {
+            // BUG 6 FIX: Clean up the uploaded file if the sheet is not found.
+            Storage::delete($path);
             return back()->with('error', 'Sheet "PO CHN" not found in the uploaded file.');
         }
 
@@ -53,7 +55,10 @@ class ImportExportController extends Controller
         $rows    = $sheet->toArray(null, true, true, false);
         $preview = $this->parseRows($rows);
 
-        session(['import_data' => $preview, 'import_path' => $path]);
+        session([
+            'import_data' => $preview,
+            'import_path' => $path,
+        ]);
 
         return Inertia::render('import-export/preview', [
             'preview'   => array_slice($preview, 0, 50),
@@ -130,11 +135,14 @@ class ImportExportController extends Controller
 
     public function import()
     {
-        $data = session('import_data', []);
+        $data       = session('import_data', []);
+        $importPath = session('import_path');
 
+        // BUG 5 FIX: Detect session expiry with a clear user-facing message
+        // instead of silently redirecting with a generic error.
         if (empty($data)) {
             return redirect()->route('import-export.index')
-                ->with('error', 'No import data found. Please upload again.');
+                ->with('error', 'Your import session has expired. Please upload the file again.');
         }
 
         $imported = 0;
@@ -155,11 +163,18 @@ class ImportExportController extends Controller
             foreach ($grouped as $customerName => $rows) {
                 $first = $rows[0];
                 try {
-                    $customer = Customer::create([
-                        'name'    => $first['name'],
-                        'phone'   => $first['phone'] ?: null,
-                        'address' => $first['city'] ?: null,
-                    ]);
+                    // BUG 1 FIX: Use firstOrCreate keyed on name + phone so that
+                    // re-importing the same file finds the existing customer
+                    // instead of creating a duplicate.
+                    $customer = Customer::firstOrCreate(
+                        [
+                            'name'  => $first['name'],
+                            'phone' => $first['phone'] ?: null,
+                        ],
+                        [
+                            'address' => $first['city'] ?: null,
+                        ]
+                    );
 
                     $itemsTotal  = collect($rows)->sum('price');
                     $downPayment = 0;
@@ -202,8 +217,6 @@ class ImportExportController extends Controller
 
                     $imported++;
                 } catch (\Exception $e) {
-                    // FIX 6: Log the error so it's visible in storage/logs/laravel.log
-                    //         instead of silently disappearing.
                     Log::warning('Import row skipped', [
                         'customer' => $first['name'] ?? 'unknown',
                         'error'    => $e->getMessage(),
@@ -214,6 +227,12 @@ class ImportExportController extends Controller
                 }
             }
         });
+
+        // BUG 6 FIX: Delete the uploaded file after import completes
+        // so it doesn't accumulate in storage/app/private/imports/.
+        if ($importPath && Storage::exists($importPath)) {
+            Storage::delete($importPath);
+        }
 
         Session::forget(['import_data', 'import_path']);
 

@@ -1,17 +1,10 @@
 <?php
-// ============================================================
-// FIX 7b: app/Http/Controllers/ReportController.php
-//
-// Uses whereYear() / whereMonth() for filtering (DB-agnostic),
-// and strftime() only in the SELECT for grouping labels —
-// strftime is fine here because SQLite is used in production.
-// DATE() in the daily query also works on SQLite.
-// ============================================================
 
 namespace App\Http\Controllers;
 
 use App\Models\Order;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class ReportController extends Controller
@@ -23,19 +16,27 @@ class ReportController extends Controller
         $month  = (int) ($request->month ?? now()->month);
 
         if ($period === 'daily') {
-            // DATE() works on SQLite
+            // DATE() works on both SQLite and MySQL.
             $data = Order::whereYear('order_date', $year)
                 ->whereMonth('order_date', $month)
-                ->selectRaw("DATE(order_date) as label, COUNT(*) as total_orders, SUM(total_price - total_shipping_fee) as total_sales")
+                ->selectRaw('DATE(order_date) as label, COUNT(*) as total_orders, SUM(total_price - total_shipping_fee) as total_sales')
                 ->groupBy('label')
                 ->orderBy('label')
                 ->get();
         } else {
-            // whereYear() for filtering (DB-agnostic), strftime() for the month label (SQLite)
+            // BUG 3 FIX: Detect the DB driver at runtime and use the correct
+            // month-extraction function. strftime('%m',...) is SQLite-only;
+            // MONTH() is the MySQL equivalent.
+            $driver = DB::getDriverName();
+
+            $monthExpr = $driver === 'sqlite'
+                ? "CAST(strftime('%m', order_date) AS INTEGER)"
+                : 'MONTH(order_date)';
+
             $data = Order::whereYear('order_date', $year)
-                ->selectRaw("strftime('%m', order_date) as month_num, COUNT(*) as total_orders, SUM(total_price - total_shipping_fee) as total_sales")
-                ->groupBy('month_num')
-                ->orderBy('month_num')
+                ->selectRaw("{$monthExpr} as month_num, COUNT(*) as total_orders, SUM(total_price - total_shipping_fee) as total_sales")
+                ->groupByRaw($monthExpr)
+                ->orderByRaw($monthExpr)
                 ->get()
                 ->map(fn($row) => [
                     ...$row->toArray(),
