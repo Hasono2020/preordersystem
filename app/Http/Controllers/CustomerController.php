@@ -1,4 +1,10 @@
 <?php
+// ============================================================
+// FIX 1b: app/Http/Controllers/CustomerController.php
+// Removed 'flat_price' from the get() column list in edit().
+// That column was dropped from the DB but was still being
+// selected here, which would throw a SQL error.
+// ============================================================
 
 namespace App\Http\Controllers;
 
@@ -38,7 +44,8 @@ class CustomerController extends Controller
 
     public function edit(Customer $customer)
     {
-        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'flat_price', 'price_per_kg']);
+        // FIX 1b: Removed 'flat_price' from column list — column no longer exists
+        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
         return Inertia::render('customers/edit', compact('customer', 'areas'));
     }
 
@@ -77,7 +84,7 @@ class CustomerController extends Controller
 
         return Inertia::render('customers/print', compact('customer', 'summary'));
     }
-    
+
     public function bulkDelete(Request $request)
     {
         $request->validate([
@@ -92,5 +99,4 @@ class CustomerController extends Controller
         return redirect()->route('customers.index')
             ->with('success', "{$count} customer(s) deleted successfully.");
     }
-    
 }

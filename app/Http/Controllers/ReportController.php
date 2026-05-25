@@ -1,4 +1,12 @@
 <?php
+// ============================================================
+// FIX 7b: app/Http/Controllers/ReportController.php
+//
+// Uses whereYear() / whereMonth() for filtering (DB-agnostic),
+// and strftime() only in the SELECT for grouping labels —
+// strftime is fine here because SQLite is used in production.
+// DATE() in the daily query also works on SQLite.
+// ============================================================
 
 namespace App\Http\Controllers;
 
@@ -11,29 +19,22 @@ class ReportController extends Controller
     public function index(Request $request)
     {
         $period = $request->period ?? 'monthly';
-        $year   = $request->year  ?? now()->year;
-        $month  = $request->month ?? now()->month;
+        $year   = (int) ($request->year  ?? now()->year);
+        $month  = (int) ($request->month ?? now()->month);
 
         if ($period === 'daily') {
-            $data = Order::selectRaw("
-                    DATE(order_date) as label,
-                    COUNT(*) as total_orders,
-                    SUM(total_price - total_shipping_fee) as total_sales
-                ")
-                ->whereRaw("strftime('%Y', order_date) = ?", [(string) $year])
-                ->whereRaw("strftime('%m', order_date) = ?", [str_pad($month, 2, '0', STR_PAD_LEFT)])
+            // DATE() works on SQLite
+            $data = Order::whereYear('order_date', $year)
+                ->whereMonth('order_date', $month)
+                ->selectRaw("DATE(order_date) as label, COUNT(*) as total_orders, SUM(total_price - total_shipping_fee) as total_sales")
                 ->groupBy('label')
                 ->orderBy('label')
                 ->get();
         } else {
-            $data = Order::selectRaw("
-                    strftime('%m', order_date) as month_num,
-                    strftime('%Y', order_date) as year_num,
-                    COUNT(*) as total_orders,
-                    SUM(total_price - total_shipping_fee) as total_sales
-                ")
-                ->whereRaw("strftime('%Y', order_date) = ?", [(string) $year])
-                ->groupBy('year_num', 'month_num')
+            // whereYear() for filtering (DB-agnostic), strftime() for the month label (SQLite)
+            $data = Order::whereYear('order_date', $year)
+                ->selectRaw("strftime('%m', order_date) as month_num, COUNT(*) as total_orders, SUM(total_price - total_shipping_fee) as total_sales")
+                ->groupBy('month_num')
                 ->orderBy('month_num')
                 ->get()
                 ->map(fn($row) => [
