@@ -296,7 +296,9 @@ class ImportExportController extends Controller
                     3  => $isFirst ? $custName  : '',
                     4  => $isFirst ? $custPhone : '',
                     5  => $isFirst ? $custCity  : '',
-                    6  => $item->product_name,
+                    6  => strpos($item->product_name, ' — ') !== false
+                            ? explode(' — ', $item->product_name)[0]
+                            : $item->product_name,
                     7  => $item->color ?? '',
                     8  => $item->size  ?? '',
                     9  => $item->price,
