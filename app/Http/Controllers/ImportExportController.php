@@ -303,18 +303,18 @@ class ImportExportController extends Controller
                 $isFirst = ($i === 0);
 
                 $values = [
-                    1  => $no,
-                    2  => $isFirst ? $custName  : '',
-                    3  => $isFirst ? $custPhone : '',
-                    4  => $isFirst ? $areaName  : '',
+                    1  => $isFirst ? $no : '',          // No: once per order
+                    2  => $isFirst ? $custName  : '',   // Name: once per order
+                    3  => $isFirst ? $custPhone : '',   // Phone: once per order
+                    4  => $isFirst ? $areaName  : '',   // Area: once per order
                     5  => $this->extractCode($item->product_name),
                     6  => $item->color ?? '',
                     7  => $item->size  ?? '',
                     8  => (float) $item->price,
-                    9  => ($isFirst && $totalDP > 0) ? $totalDP : '',
-                    10 => $isFirst && $orderDate !== '' ? $orderDate : '',
-                    11 => $isFirst ? $an    : '',
-                    12 => $isFirst ? $notes : '',
+                    9  => ($isFirst && $totalDP > 0) ? $totalDP : '', // Total DP: once per order
+                    10 => $isFirst ? $orderDate : '',   // Date: once per order
+                    11 => $isFirst ? $an    : '',       // AN: once per order
+                    12 => $isFirst ? $notes : '',       // Notes: once per order
                 ];
 
                 foreach ($values as $col => $value) {
@@ -329,9 +329,10 @@ class ImportExportController extends Controller
                     ]],
                 ]);
 
-                $no++;
                 $rowNum++;
             }
+
+            $no++; // Increment No per ORDER, after all its item rows
         }
 
         // ── Column widths
