@@ -19,10 +19,10 @@ export default function ShippingAreasIndex({ areas }: any) {
         const file = e.target.files?.[0];
         if (!file) return;
         setData('file', file);
-        post('/shipping-areas/import', {
-            forceFormData: true,
-            data: { file },
-        });
+        // Let useForm handle the file via forceFormData
+        setTimeout(() => {
+            post('/shipping-areas/import', { forceFormData: true });
+        }, 50);
     }
 
     return (

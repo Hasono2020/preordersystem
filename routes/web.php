@@ -53,6 +53,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Import / Export
     Route::get('import-export',          [ImportExportController::class, 'index'])->name('import-export.index');
+    Route::get('import-export/template', [\App\Http\Controllers\ImportExportController::class, 'template'])
+        ->name('import-export.template');
     Route::post('import-export/preview', [ImportExportController::class, 'preview'])->name('import-export.preview');
     Route::post('import-export/confirm', [ImportExportController::class, 'import'])->name('import-export.confirm');
     Route::get('import-export/export',   [ImportExportController::class, 'export'])->name('import-export.export');

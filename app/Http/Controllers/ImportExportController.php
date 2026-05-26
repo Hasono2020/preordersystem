@@ -4,12 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use App\Models\Order;
+use App\Models\ShippingArea;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Session;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -21,10 +20,26 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ImportExportController extends Controller
 {
+    // ─── Column map (0-based index) ───────────────────────────
+    // 0: NO
+    // 1: NAME
+    // 2: PHONE
+    // 3: AREA
+    // 4: CODE
+    // 5: COLOR
+    // 6: SIZE
+    // 7: PRICE
+    // 8: DP
+    // 9: DATE OF DP
+    // 10: AN
+    // 11: NOTES
+
     public function index()
     {
         return Inertia::render('import-export/index');
     }
+
+    // ─── IMPORT ───────────────────────────────────────────────
 
     public function preview(Request $request)
     {
@@ -32,33 +47,21 @@ class ImportExportController extends Controller
             'file' => 'required|file|mimes:xlsx,xls|max:20480',
         ]);
 
-        // BUG 5 & 6 FIX: Delete any leftover file from a previous upload
-        // before storing the new one, so abandoned files don't accumulate.
-        $oldPath = session('import_path');
-        if ($oldPath && Storage::exists($oldPath)) {
-            Storage::delete($oldPath);
-        }
-
         $path        = $request->file('file')->store('imports');
         $fullPath    = storage_path('app/private/' . $path);
         $spreadsheet = IOFactory::load($fullPath);
         $sheetNames  = $spreadsheet->getSheetNames();
-        $sheetIndex  = array_search('PO CHN', $sheetNames);
 
-        if ($sheetIndex === false) {
-            // BUG 6 FIX: Clean up the uploaded file if the sheet is not found.
-            Storage::delete($path);
-            return back()->with('error', 'Sheet "PO CHN" not found in the uploaded file.');
-        }
+        // Accept sheet named 'Orders' or first sheet
+        $sheetIndex = array_search('Orders', $sheetNames);
+        $sheet      = $sheetIndex !== false
+            ? $spreadsheet->getSheet((int) $sheetIndex)
+            : $spreadsheet->getSheet(0);
 
-        $sheet   = $spreadsheet->getSheet((int) $sheetIndex);
         $rows    = $sheet->toArray(null, true, true, false);
         $preview = $this->parseRows($rows);
 
-        session([
-            'import_data' => $preview,
-            'import_path' => $path,
-        ]);
+        session(['import_data' => $preview, 'import_path' => $path]);
 
         return Inertia::render('import-export/preview', [
             'preview'   => array_slice($preview, 0, 50),
@@ -71,46 +74,57 @@ class ImportExportController extends Controller
         $parsed    = [];
         $lastName  = '';
         $lastPhone = '';
-        $lastCity  = '';
+        $lastArea  = '';
         $lastDP    = 0;
         $lastDate  = null;
+        $lastAn    = '';
+        $lastNotes = '';
         $lastPrice = 0;
 
         foreach ($rows as $i => $row) {
-            if ($i <= 1) continue;
+            // Skip header row (row index 0)
+            if ($i === 0) continue;
 
             $row = array_values($row);
 
-            $name = trim((string)($row[2] ?? ''));
-            $code = trim((string)($row[5] ?? ''));
-
+            // Col 4: CODE (required)
+            $code = trim((string)($row[4] ?? ''));
             if ($code === '' || $code === '#N/A') continue;
 
+            // Col 1: NAME — inherit if blank
+            $name = trim((string)($row[1] ?? ''));
             if ($name !== '') {
                 $lastName  = $name;
-                $lastPhone = trim((string)($row[3] ?? ''));
-                $lastCity  = trim((string)($row[4] ?? ''));
+                $lastPhone = trim((string)($row[2] ?? ''));
+                $lastArea  = trim((string)($row[3] ?? ''));
+                $lastAn    = trim((string)($row[10] ?? ''));
+                $lastNotes = trim((string)($row[11] ?? ''));
             }
 
             if ($lastName === '') continue;
 
-            $rawDate = $row[10] ?? null;
+            // Col 9: DATE OF DP — inherit if blank
+            $rawDate = $row[9] ?? null;
             if ($rawDate instanceof \DateTime) {
                 $lastDate = $rawDate->format('Y-m-d');
             } elseif ($rawDate && is_numeric($rawDate)) {
                 try {
                     $lastDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float)$rawDate)->format('Y-m-d');
                 } catch (\Exception $e) {}
-            } elseif ($rawDate) {
+            } elseif ($rawDate && trim((string)$rawDate) !== '') {
                 try { $lastDate = \Carbon\Carbon::parse((string)$rawDate)->format('Y-m-d'); } catch (\Exception $e) {}
             }
 
-            $rowPrice = isset($row[8]) && is_numeric($row[8]) && (float)$row[8] > 0 ? (float)$row[8] : null;
+            // Col 7: PRICE — inherit if blank
+            $rowPrice = isset($row[7]) && is_numeric($row[7]) && (float)$row[7] > 0
+                ? (float)$row[7] : null;
             if ($rowPrice !== null) {
                 $lastPrice = $rowPrice;
             }
 
-            $rowDP = isset($row[9]) && is_numeric($row[9]) && (float)$row[9] > 0 ? (float)$row[9] : null;
+            // Col 8: DP — inherit if blank
+            $rowDP = isset($row[8]) && is_numeric($row[8]) && (float)$row[8] > 0
+                ? (float)$row[8] : null;
             if ($rowDP !== null) {
                 $lastDP = $rowDP;
             }
@@ -118,14 +132,15 @@ class ImportExportController extends Controller
             $parsed[] = [
                 'name'         => $lastName,
                 'phone'        => $lastPhone,
-                'city'         => $lastCity,
+                'area'         => $lastArea,
                 'product_code' => $code,
-                'color'        => trim((string)($row[6] ?? '')),
-                'size'         => trim((string)($row[7] ?? '')),
+                'color'        => trim((string)($row[5] ?? '')),
+                'size'         => trim((string)($row[6] ?? '')),
                 'price'        => $lastPrice,
                 'down_payment' => $lastDP,
                 'order_date'   => $lastDate ?? now()->format('Y-m-d'),
-                'notes'        => trim((string)($row[12] ?? '')),
+                'an'           => $lastAn,
+                'notes'        => $lastNotes,
                 'row_dp'       => $rowDP,
             ];
         }
@@ -135,20 +150,18 @@ class ImportExportController extends Controller
 
     public function import()
     {
-        $data       = session('import_data', []);
-        $importPath = session('import_path');
+        $data = session('import_data', []);
 
-        // BUG 5 FIX: Detect session expiry with a clear user-facing message
-        // instead of silently redirecting with a generic error.
         if (empty($data)) {
             return redirect()->route('import-export.index')
-                ->with('error', 'Your import session has expired. Please upload the file again.');
+                ->with('error', 'No import data found. Please upload again.');
         }
 
         $imported = 0;
         $skipped  = 0;
 
         DB::transaction(function () use ($data, &$imported, &$skipped) {
+            // Group by customer name only
             $grouped           = [];
             $customerFirstDate = [];
 
@@ -163,18 +176,21 @@ class ImportExportController extends Controller
             foreach ($grouped as $customerName => $rows) {
                 $first = $rows[0];
                 try {
-                    // BUG 1 FIX: Use firstOrCreate keyed on name + phone so that
-                    // re-importing the same file finds the existing customer
-                    // instead of creating a duplicate.
+                    // Find shipping area by name
+                    $area = ShippingArea::whereRaw('LOWER(name) = ?', [
+                        strtolower(trim($first['area']))
+                    ])->first();
+
+                    // Create or find customer
                     $customer = Customer::firstOrCreate(
-                        [
-                            'name'  => $first['name'],
-                            'phone' => $first['phone'] ?: null,
-                        ],
-                        [
-                            'address' => $first['city'] ?: null,
-                        ]
+                        ['name' => $first['name'], 'phone' => $first['phone'] ?: null],
+                        ['area_id' => $area?->id, 'address' => null]
                     );
+
+                    // If customer exists, update area if found
+                    if ($area && !$customer->area_id) {
+                        $customer->update(['area_id' => $area->id]);
+                    }
 
                     $itemsTotal  = collect($rows)->sum('price');
                     $downPayment = 0;
@@ -195,7 +211,7 @@ class ImportExportController extends Controller
                         'status'              => 'bought',
                         'discount'            => 0,
                         'shipping_fee'        => 0,
-                        'shipping_fee_per_kg' => 0,
+                        'shipping_fee_per_kg' => $area?->price_per_kg ?? 0,
                         'total_shipping_fee'  => 0,
                         'weight'              => 0,
                         'down_payment'        => $downPayment,
@@ -217,31 +233,26 @@ class ImportExportController extends Controller
 
                     $imported++;
                 } catch (\Exception $e) {
-                    Log::warning('Import row skipped', [
-                        'customer' => $first['name'] ?? 'unknown',
-                        'error'    => $e->getMessage(),
-                        'file'     => $e->getFile(),
-                        'line'     => $e->getLine(),
-                    ]);
+                    Log::warning('Import row skipped: ' . $e->getMessage());
                     $skipped++;
                 }
             }
         });
 
-        // BUG 6 FIX: Delete the uploaded file after import completes
-        // so it doesn't accumulate in storage/app/private/imports/.
-        if ($importPath && Storage::exists($importPath)) {
-            Storage::delete($importPath);
+        session()->forget(['import_data', 'import_path']);
+
+        return redirect()->route('orders.index')
+            ->with('success', "Import complete! {$imported} orders imported, {$skipped} skipped.");
+    }
+
+    // ─── EXPORT ───────────────────────────────────────────────
+
+    private function extractCode(string $productName): string
+    {
+        if (strpos($productName, ' — ') !== false) {
+            return explode(' — ', $productName)[0];
         }
-
-        Session::forget(['import_data', 'import_path']);
-
-        $message = "Import complete! {$imported} orders imported.";
-        if ($skipped > 0) {
-            $message .= " {$skipped} skipped — check storage/logs/laravel.log for details.";
-        }
-
-        return redirect()->route('orders.index')->with('success', $message);
+        return $productName;
     }
 
     public function export()
@@ -253,67 +264,65 @@ class ImportExportController extends Controller
         $spreadsheet = new Spreadsheet();
         /** @var \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet */
         $sheet = $spreadsheet->getActiveSheet() ?? $spreadsheet->createSheet();
-        $sheet->setTitle('PO CHN');
+        $sheet->setTitle('Orders');
 
-        $sheet->mergeCells('A1:M1');
-        $sheet->getCell('A1')->setValue('LIST ORDERAN CUSTOMER');
-        $sheet->getStyle('A1')->applyFromArray([
-            'font'      => ['bold' => true, 'size' => 14],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-            'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFE699']],
-        ]);
-        $sheet->getRowDimension(1)->setRowHeight(25);
-
-        $headers = ['KET','NO','NAMA','IG/WA','KOTA','KODE','WARNA','SIZE','HARGA SATUAN','DP','TGL DP','AN','KET'];
+        // ── Row 1: Headers
+        $headers = ['No', 'Name', 'Phone', 'Area', 'Code', 'Color', 'Size', 'Price', 'DP', 'Date of DP', 'AN', 'Notes'];
         foreach ($headers as $col => $header) {
             $colLetter = Coordinate::stringFromColumnIndex($col + 1);
-            $sheet->getCell($colLetter . '2')->setValue($header);
+            $sheet->getCell($colLetter . '1')->setValue($header);
         }
-        $sheet->getStyle('A2:M2')->applyFromArray([
+        $sheet->getStyle('A1:L1')->applyFromArray([
             'font'      => ['bold' => true],
             'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'BDD7EE']],
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
             'borders'   => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
         ]);
+        $sheet->getRowDimension(1)->setRowHeight(20);
 
-        $row = 3;
-        $no  = 1;
+        // ── Data rows
+        $rowNum = 2;
+        $no     = 1;
 
         foreach ($orders as $order) {
-            $itemsArray = $order->items->values();
-            $totalDP    = $order->down_payment;
-            $orderDate  = $order->order_date ? $order->order_date->format('Y-m-d') : '';
-            $custName   = $order->customer->name ?? '';
-            $custPhone  = $order->customer->phone ?? '';
-            $custCity   = $order->customer->area->name ?? $order->customer->address ?? '';
+            $itemsList = $order->items->values()->all();
+            $totalItems = count($itemsList);
 
-            foreach ($itemsArray as $idx => $item) {
-                $isFirst = ($idx === 0);
+            if ($totalItems === 0) continue;
+
+            $totalDP    = (float) $order->down_payment;
+            $orderDate  = $order->order_date ? $order->order_date->format('Y-m-d') : '';
+            $custName   = $order->customer?->name ?? '';
+            $custPhone  = $order->customer?->phone ?? '';
+            $areaName   = $order->customer?->area?->name ?? '';
+            $an         = $custName; // AN = customer name (order by)
+            $notes      = $order->notes ?? '';
+
+            for ($i = 0; $i < $totalItems; $i++) {
+                $item    = $itemsList[$i];
+                $isFirst = ($i === 0);
 
                 $values = [
-                    1  => '',
-                    2  => $no,
-                    3  => $isFirst ? $custName  : '',
-                    4  => $isFirst ? $custPhone : '',
-                    5  => $isFirst ? $custCity  : '',
-                    6  => strpos($item->product_name, ' — ') !== false
-                            ? explode(' — ', $item->product_name)[0]
-                            : $item->product_name,
-                    7  => $item->color ?? '',
-                    8  => $item->size  ?? '',
-                    9  => $item->price,
-                    10 => $isFirst && $totalDP > 0 ? $totalDP : '',
-                    11 => $isFirst ? $orderDate : '',
-                    12 => $isFirst ? $custName  : '',
-                    13 => $isFirst ? ($order->notes ?? '') : '',
+                    1  => $no,
+                    2  => $isFirst ? $custName  : '',
+                    3  => $isFirst ? $custPhone : '',
+                    4  => $isFirst ? $areaName  : '',
+                    5  => $this->extractCode($item->product_name),
+                    6  => $item->color ?? '',
+                    7  => $item->size  ?? '',
+                    8  => (float) $item->price,
+                    9  => ($isFirst && $totalDP > 0) ? $totalDP : '',
+                    10 => $isFirst && $orderDate !== '' ? $orderDate : '',
+                    11 => $isFirst ? $an    : '',
+                    12 => $isFirst ? $notes : '',
                 ];
 
                 foreach ($values as $col => $value) {
                     $colLetter = Coordinate::stringFromColumnIndex($col);
-                    $sheet->getCell($colLetter . $row)->setValue($value);
+                    $sheet->getCell($colLetter . $rowNum)->setValue($value);
                 }
 
-                $sheet->getStyle("A{$row}:M{$row}")->applyFromArray([
+                $sheet->getStyle("A{$rowNum}:L{$rowNum}")->applyFromArray([
                     'borders' => ['allBorders' => [
                         'borderStyle' => Border::BORDER_THIN,
                         'color'       => ['rgb' => 'D9D9D9'],
@@ -321,11 +330,12 @@ class ImportExportController extends Controller
                 ]);
 
                 $no++;
-                $row++;
+                $rowNum++;
             }
         }
 
-        $widths = [1=>8, 2=>6, 3=>20, 4=>12, 5=>15, 6=>10, 7=>10, 8=>8, 9=>15, 10=>15, 11=>12, 12=>12, 13=>15];
+        // ── Column widths
+        $widths = [1=>6, 2=>20, 3=>15, 4=>18, 5=>12, 6=>12, 7=>8, 8=>15, 9=>15, 10=>14, 11=>15, 12=>20];
         foreach ($widths as $col => $width) {
             $sheet->getColumnDimensionByColumn($col)->setWidth($width);
         }
@@ -336,6 +346,69 @@ class ImportExportController extends Controller
         $writer->save($tempFile);
 
         return response()->download($tempFile, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ])->deleteFileAfterSend(true);
+    }
+
+    // ─── TEMPLATE ─────────────────────────────────────────────
+
+    public function template()
+    {
+        $spreadsheet = new Spreadsheet();
+        /** @var \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet */
+        $sheet = $spreadsheet->getActiveSheet() ?? $spreadsheet->createSheet();
+        $sheet->setTitle('Orders');
+
+        // Headers
+        $headers = ['No', 'Name', 'Phone', 'Area', 'Code', 'Color', 'Size', 'Price', 'DP', 'Date of DP', 'AN', 'Notes'];
+        foreach ($headers as $col => $header) {
+            $colLetter = Coordinate::stringFromColumnIndex($col + 1);
+            $sheet->getCell($colLetter . '1')->setValue($header);
+        }
+        $sheet->getStyle('A1:L1')->applyFromArray([
+            'font'      => ['bold' => true],
+            'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'BDD7EE']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+            'borders'   => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
+        ]);
+        $sheet->getRowDimension(1)->setRowHeight(20);
+
+        // Sample rows
+        $samples = [
+            [1, 'JASMINE 7911', '08123456789', 'Jakarta Selatan', 'NA_03', 'GREY',  'FZ', 169000, 500000, '2026-05-03', 'JASMINE', ''],
+            [2, '',             '',             '',                'NA_03', 'BROWN', 'FZ', 169000, '',     '',           '',        ''],
+            [3, '',             '',             '',                'NA_03', 'NAVY',  'FZ', 169000, '',     '',           '',        ''],
+            [4, 'PHOENIX',      '08198765432', 'Surabaya',        'NZ_01', 'WHITE', 'FZ', 95000,  0,      '2026-05-03', 'PHOENIX', ''],
+            [5, '',             '',             '',                'NZ_01', 'BLACK', 'FZ', 95000,  '',     '',           '',        ''],
+        ];
+
+        $rowNum = 2;
+        foreach ($samples as $sample) {
+            foreach ($sample as $col => $value) {
+                $colLetter = Coordinate::stringFromColumnIndex($col + 1);
+                $sheet->getCell($colLetter . $rowNum)->setValue($value);
+            }
+            $sheet->getStyle("A{$rowNum}:L{$rowNum}")->applyFromArray([
+                'font'    => ['color' => ['rgb' => 'AAAAAA'], 'italic' => true],
+                'borders' => ['allBorders' => [
+                    'borderStyle' => Border::BORDER_THIN,
+                    'color'       => ['rgb' => 'D9D9D9'],
+                ]],
+            ]);
+            $rowNum++;
+        }
+
+        // Column widths
+        $widths = [1=>6, 2=>20, 3=>15, 4=>18, 5=>12, 6=>12, 7=>8, 8=>15, 9=>15, 10=>14, 11=>15, 12=>20];
+        foreach ($widths as $col => $width) {
+            $sheet->getColumnDimensionByColumn($col)->setWidth($width);
+        }
+
+        $writer   = new Xlsx($spreadsheet);
+        $tempFile = tempnam(sys_get_temp_dir(), 'template_');
+        $writer->save($tempFile);
+
+        return response()->download($tempFile, 'orders_template.xlsx', [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ])->deleteFileAfterSend(true);
     }
