@@ -94,6 +94,12 @@ class ImportExportController extends Controller
             // Col 1: NAME — inherit if blank
             $name = trim((string)($row[1] ?? ''));
             if ($name !== '') {
+                // New customer detected — reset DP and Date so they don't bleed
+                // into this customer from the previous one
+                if ($name !== $lastName) {
+                    $lastDP   = 0;
+                    $lastDate = null;
+                }
                 $lastName  = $name;
                 $lastPhone = trim((string)($row[2] ?? ''));
                 $lastArea  = trim((string)($row[3] ?? ''));
@@ -280,66 +286,41 @@ class ImportExportController extends Controller
         ]);
         $sheet->getRowDimension(1)->setRowHeight(20);
 
-        // ── Group orders by customer_id, collect all items per customer
-        // Each customer = one block; Name/Phone/Area/DP/Date/AN/Notes shown only on first row
-        $grouped = [];
-        foreach ($orders as $order) {
-            $custId = $order->customer_id ?? 0;
-            if (!isset($grouped[$custId])) {
-                $grouped[$custId] = [
-                    'name'       => $order->customer?->name  ?? '',
-                    'phone'      => $order->customer?->phone ?? '',
-                    'area'       => $order->customer?->area?->name ?? '',
-                    'total_dp'   => 0.0,
-                    'first_date' => '',
-                    'notes'      => $order->notes ?? '',
-                    'items'      => [],
-                ];
-            }
-            // Sum all DP across orders for this customer
-            $grouped[$custId]['total_dp'] += (float) $order->down_payment;
-            // Use the earliest order date
-            $date = $order->order_date ? $order->order_date->format('Y-m-d') : '';
-            if ($date && ($grouped[$custId]['first_date'] === '' || $date < $grouped[$custId]['first_date'])) {
-                $grouped[$custId]['first_date'] = $date;
-            }
-            // Collect all items from all orders
-            foreach ($order->items as $item) {
-                $grouped[$custId]['items'][] = $item;
-            }
-        }
-
         // ── Data rows
         $rowNum = 2;
         $no     = 1;
 
-        foreach ($grouped as $custData) {
-            $allItems = $custData['items'];
-            if (empty($allItems)) continue;
+        foreach ($orders as $order) {
+            $itemsList = $order->items->values()->all();
+            $totalItems = count($itemsList);
 
-            $custName  = $custData['name'];
-            $custPhone = $custData['phone'];
-            $areaName  = $custData['area'];
-            $totalDP   = $custData['total_dp'];
-            $firstDate = $custData['first_date'];
-            $notes     = $custData['notes'];
+            if ($totalItems === 0) continue;
 
-            foreach ($allItems as $idx => $item) {
-                $isFirst = ($idx === 0);
+            $totalDP    = (float) $order->down_payment;
+            $orderDate  = $order->order_date ? $order->order_date->format('Y-m-d') : '';
+            $custName   = $order->customer?->name ?? '';
+            $custPhone  = $order->customer?->phone ?? '';
+            $areaName   = $order->customer?->area?->name ?? '';
+            $an         = $custName; // AN = customer name (order by)
+            $notes      = $order->notes ?? '';
+
+            for ($i = 0; $i < $totalItems; $i++) {
+                $item    = $itemsList[$i];
+                $isFirst = ($i === 0);
 
                 $values = [
-                    1  => $no,                         // No: increments every item row
-                    2  => $isFirst ? $custName  : '',  // Name: once per customer
-                    3  => $isFirst ? $custPhone : '',  // Phone: once per customer
-                    4  => $isFirst ? $areaName  : '',  // Area: once per customer
+                    1  => $isFirst ? $no : '',          // No: once per order
+                    2  => $isFirst ? $custName  : '',   // Name: once per order
+                    3  => $isFirst ? $custPhone : '',   // Phone: once per order
+                    4  => $isFirst ? $areaName  : '',   // Area: once per order
                     5  => $this->extractCode($item->product_name),
                     6  => $item->color ?? '',
                     7  => $item->size  ?? '',
                     8  => (float) $item->price,
-                    9  => ($isFirst && $totalDP > 0) ? $totalDP : '', // Total DP: once per customer
-                    10 => $isFirst ? $firstDate : '',  // Date: once per customer
-                    11 => $isFirst ? $custName  : '',  // AN: once per customer
-                    12 => $isFirst ? $notes     : '',  // Notes: once per customer
+                    9  => ($isFirst && $totalDP > 0) ? $totalDP : '', // Total DP: once per order
+                    10 => $isFirst ? $orderDate : '',   // Date: once per order
+                    11 => $isFirst ? $an    : '',       // AN: once per order
+                    12 => $isFirst ? $notes : '',       // Notes: once per order
                 ];
 
                 foreach ($values as $col => $value) {
@@ -355,8 +336,9 @@ class ImportExportController extends Controller
                 ]);
 
                 $rowNum++;
-                $no++; // Increment No every item row
             }
+
+            $no++; // Increment No per ORDER, after all its item rows
         }
 
         // ── Column widths
@@ -384,7 +366,7 @@ class ImportExportController extends Controller
         $sheet = $spreadsheet->getActiveSheet() ?? $spreadsheet->createSheet();
         $sheet->setTitle('Orders');
 
-        // Headers
+        // Headers — same as export
         $headers = ['No', 'Name', 'Phone', 'Area', 'Code', 'Color', 'Size', 'Price', 'DP', 'Date of DP', 'AN', 'Notes'];
         foreach ($headers as $col => $header) {
             $colLetter = Coordinate::stringFromColumnIndex($col + 1);
@@ -398,13 +380,16 @@ class ImportExportController extends Controller
         ]);
         $sheet->getRowDimension(1)->setRowHeight(20);
 
-        // Sample rows
+        // Sample rows — matches export format:
+        // Name & Phone repeat every row, Area & DP only on first row per customer
+        // No blank rows between customers — new customer just starts on the next row
         $samples = [
-            [1, 'JASMINE 7911', '08123456789', 'Jakarta Selatan', 'NA_03', 'GREY',  'FZ', 169000, 500000, '2026-05-03', 'JASMINE', ''],
-            [2, '',             '',             '',                'NA_03', 'BROWN', 'FZ', 169000, '',     '',           '',        ''],
-            [3, '',             '',             '',                'NA_03', 'NAVY',  'FZ', 169000, '',     '',           '',        ''],
-            [4, 'PHOENIX',      '08198765432', 'Surabaya',        'NZ_01', 'WHITE', 'FZ', 95000,  0,      '2026-05-03', 'PHOENIX', ''],
-            [5, '',             '',             '',                'NZ_01', 'BLACK', 'FZ', 95000,  '',     '',           '',        ''],
+            // No   Name             Phone           Area              Code     Color    Size  Price   DP       Date          AN          Notes
+            [1,  'JASMINE 7911',  '08123456789',  'Jakarta Selatan', 'NA_03', 'GREY',  'FZ', 169000, 500000, '2026-05-03', 'JASMINE',  ''],
+            [2,  'JASMINE 7911',  '08123456789',  '',                'NA_03', 'BROWN', 'FZ', 169000, '',     '',           'JASMINE',  ''],
+            [3,  'JASMINE 7911',  '08123456789',  '',                'NA_03', 'NAVY',  'FZ', 169000, '',     '',           'JASMINE',  ''],
+            [4,  'PHOENIX',       '08198765432',  'Surabaya',        'NZ_01', 'WHITE', 'FZ', 95000,  '',     '',           'PHOENIX',  ''],
+            [5,  'PHOENIX',       '08198765432',  '',                'NZ_01', 'BLACK', 'FZ', 95000,  '',     '',           'PHOENIX',  ''],
         ];
 
         $rowNum = 2;
@@ -423,7 +408,7 @@ class ImportExportController extends Controller
             $rowNum++;
         }
 
-        // Column widths
+        // Column widths — same as export
         $widths = [1=>6, 2=>20, 3=>15, 4=>18, 5=>12, 6=>12, 7=>8, 8=>15, 9=>15, 10=>14, 11=>15, 12=>20];
         foreach ($widths as $col => $width) {
             $sheet->getColumnDimensionByColumn($col)->setWidth($width);
