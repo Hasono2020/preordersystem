@@ -87,13 +87,20 @@ class CustomerController extends Controller
 
     public function bulkDelete(Request $request)
     {
+        // If 'all' flag is true, delete ALL customers
+        if ($request->boolean('all')) {
+            $count = Customer::count();
+            Customer::query()->delete();
+            return redirect()->route('customers.index')
+                ->with('success', "{$count} customers deleted successfully.");
+        }
+
         $request->validate([
             'ids'   => 'required|array|min:1',
             'ids.*' => 'exists:customers,id',
         ]);
 
         Customer::whereIn('id', $request->ids)->delete();
-
         $count = count($request->ids);
 
         return redirect()->route('customers.index')

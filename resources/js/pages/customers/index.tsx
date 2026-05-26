@@ -5,17 +5,29 @@ import { Button } from '@/components/ui/button';
 
 export default function CustomersIndex({ customers }: any) {
     const { flash } = usePage().props as any;
-    const [selected, setSelected] = useState<number[]>([]);
+    const [selected, setSelected]     = useState<number[]>([]);
+    const [selectAll, setSelectAll]   = useState(false); // true = ALL across pages
 
-    const allIds         = customers.data.map((c: any) => c.id);
-    const allSelected    = allIds.length > 0 && allIds.every((id: number) => selected.includes(id));
-    const someSelected   = selected.length > 0;
+    const pageIds     = customers.data.map((c: any) => c.id);
+    const allPageSel  = pageIds.length > 0 && pageIds.every((id: number) => selected.includes(id));
+    const someSelected = selected.length > 0 || selectAll;
 
     function toggleAll() {
-        setSelected(allSelected ? [] : allIds);
+        if (selectAll) {
+            // Deselect everything
+            setSelectAll(false);
+            setSelected([]);
+        } else if (allPageSel) {
+            // All on page selected → deselect page
+            setSelected([]);
+        } else {
+            // Select all on current page
+            setSelected(pageIds);
+        }
     }
 
     function toggleOne(id: number) {
+        setSelectAll(false);
         setSelected(prev =>
             prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
         );
@@ -28,13 +40,26 @@ export default function CustomersIndex({ customers }: any) {
     }
 
     function bulkDelete() {
-        if (confirm(`Delete ${selected.length} selected customer(s)? This cannot be undone.`)) {
-            router.delete('/customers/bulk-delete', {
-                data: { ids: selected },
-                onSuccess: () => setSelected([]),
-            });
+        const label = selectAll
+            ? `ALL ${customers.total} customers`
+            : `${selected.length} selected customer(s)`;
+
+        if (confirm(`Delete ${label}? This cannot be undone.`)) {
+            if (selectAll) {
+                router.delete('/customers/bulk-delete', {
+                    data: { all: true },
+                    onSuccess: () => { setSelected([]); setSelectAll(false); },
+                });
+            } else {
+                router.delete('/customers/bulk-delete', {
+                    data: { ids: selected },
+                    onSuccess: () => { setSelected([]); setSelectAll(false); },
+                });
+            }
         }
     }
+
+    const selectedCount = selectAll ? customers.total : selected.length;
 
     return (
         <>
@@ -60,20 +85,44 @@ export default function CustomersIndex({ customers }: any) {
 
                 {/* Bulk action bar */}
                 {someSelected && (
-                    <div className="flex items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-2.5">
+                    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-2.5">
                         <span className="text-sm font-medium text-destructive">
-                            {selected.length} customer{selected.length > 1 ? 's' : ''} selected
+                            {selectAll
+                                ? `All ${customers.total} customers selected`
+                                : `${selected.length} customer${selected.length > 1 ? 's' : ''} selected`}
                         </span>
+
+                        {/* Offer to select ALL across all pages */}
+                        {!selectAll && allPageSel && customers.total > customers.data.length && (
+                            <button
+                                className="text-xs text-primary underline hover:no-underline"
+                                onClick={() => setSelectAll(true)}
+                            >
+                                Select all {customers.total} customers across all pages
+                            </button>
+                        )}
+
+                        {selectAll && (
+                            <button
+                                className="text-xs text-muted-foreground underline hover:no-underline"
+                                onClick={() => { setSelectAll(false); setSelected([]); }}
+                            >
+                                Clear — select current page only
+                            </button>
+                        )}
+
                         <Button
                             variant="destructive"
                             size="sm"
                             onClick={bulkDelete}
                         >
-                            <Trash2 className="size-4 mr-1" /> Delete Selected
+                            <Trash2 className="size-4 mr-1" />
+                            Delete {selectAll ? `All ${customers.total}` : selected.length}
                         </Button>
+
                         <button
                             className="text-xs text-muted-foreground hover:text-foreground ml-auto"
-                            onClick={() => setSelected([])}
+                            onClick={() => { setSelected([]); setSelectAll(false); }}
                         >
                             Clear selection
                         </button>
@@ -87,7 +136,7 @@ export default function CustomersIndex({ customers }: any) {
                                 <th className="px-4 py-3 w-10">
                                     <input
                                         type="checkbox"
-                                        checked={allSelected}
+                                        checked={selectAll || allPageSel}
                                         onChange={toggleAll}
                                         className="rounded border-gray-300 cursor-pointer"
                                     />
@@ -104,7 +153,7 @@ export default function CustomersIndex({ customers }: any) {
                                 <tr
                                     key={c.id}
                                     className={`border-b last:border-0 transition-colors ${
-                                        selected.includes(c.id)
+                                        selectAll || selected.includes(c.id)
                                             ? 'bg-destructive/5'
                                             : idx % 2 === 0 ? 'hover:bg-muted/30' : 'bg-muted/10 hover:bg-muted/30'
                                     }`}
@@ -112,7 +161,7 @@ export default function CustomersIndex({ customers }: any) {
                                     <td className="px-4 py-3">
                                         <input
                                             type="checkbox"
-                                            checked={selected.includes(c.id)}
+                                            checked={selectAll || selected.includes(c.id)}
                                             onChange={() => toggleOne(c.id)}
                                             className="rounded border-gray-300 cursor-pointer"
                                         />
@@ -122,8 +171,10 @@ export default function CustomersIndex({ customers }: any) {
                                     <td className="px-4 py-3 text-muted-foreground">{c.address ?? '—'}</td>
                                     <td className="px-4 py-3 text-muted-foreground">{c.area?.name ?? '—'}</td>
                                     <td className="px-4 py-3 flex gap-2 justify-end">
-                                        <button onClick={() => window.open(`/customers/${c.id}/print`, '_blank')}
-                                            className="inline-flex items-center justify-center rounded-md h-9 w-9 hover:bg-accent hover:text-accent-foreground">
+                                        <button
+                                            onClick={() => window.open(`/customers/${c.id}/print`, '_blank')}
+                                            className="inline-flex items-center justify-center rounded-md h-9 w-9 hover:bg-accent hover:text-accent-foreground"
+                                        >
                                             <Printer className="size-4 text-blue-500" />
                                         </button>
                                         <Link href={`/customers/${c.id}/edit`}>
