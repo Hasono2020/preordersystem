@@ -280,41 +280,66 @@ class ImportExportController extends Controller
         ]);
         $sheet->getRowDimension(1)->setRowHeight(20);
 
+        // ── Group orders by customer_id, collect all items per customer
+        // Each customer = one block; Name/Phone/Area/DP/Date/AN/Notes shown only on first row
+        $grouped = [];
+        foreach ($orders as $order) {
+            $custId = $order->customer_id ?? 0;
+            if (!isset($grouped[$custId])) {
+                $grouped[$custId] = [
+                    'name'       => $order->customer?->name  ?? '',
+                    'phone'      => $order->customer?->phone ?? '',
+                    'area'       => $order->customer?->area?->name ?? '',
+                    'total_dp'   => 0.0,
+                    'first_date' => '',
+                    'notes'      => $order->notes ?? '',
+                    'items'      => [],
+                ];
+            }
+            // Sum all DP across orders for this customer
+            $grouped[$custId]['total_dp'] += (float) $order->down_payment;
+            // Use the earliest order date
+            $date = $order->order_date ? $order->order_date->format('Y-m-d') : '';
+            if ($date && ($grouped[$custId]['first_date'] === '' || $date < $grouped[$custId]['first_date'])) {
+                $grouped[$custId]['first_date'] = $date;
+            }
+            // Collect all items from all orders
+            foreach ($order->items as $item) {
+                $grouped[$custId]['items'][] = $item;
+            }
+        }
+
         // ── Data rows
         $rowNum = 2;
         $no     = 1;
 
-        foreach ($orders as $order) {
-            $itemsList = $order->items->values()->all();
-            $totalItems = count($itemsList);
+        foreach ($grouped as $custData) {
+            $allItems = $custData['items'];
+            if (empty($allItems)) continue;
 
-            if ($totalItems === 0) continue;
+            $custName  = $custData['name'];
+            $custPhone = $custData['phone'];
+            $areaName  = $custData['area'];
+            $totalDP   = $custData['total_dp'];
+            $firstDate = $custData['first_date'];
+            $notes     = $custData['notes'];
 
-            $totalDP    = (float) $order->down_payment;
-            $orderDate  = $order->order_date ? $order->order_date->format('Y-m-d') : '';
-            $custName   = $order->customer?->name ?? '';
-            $custPhone  = $order->customer?->phone ?? '';
-            $areaName   = $order->customer?->area?->name ?? '';
-            $an         = $custName; // AN = customer name (order by)
-            $notes      = $order->notes ?? '';
-
-            for ($i = 0; $i < $totalItems; $i++) {
-                $item    = $itemsList[$i];
-                $isFirst = ($i === 0);
+            foreach ($allItems as $idx => $item) {
+                $isFirst = ($idx === 0);
 
                 $values = [
-                    1  => $isFirst ? $no : '',          // No: once per order
-                    2  => $isFirst ? $custName  : '',   // Name: once per order
-                    3  => $isFirst ? $custPhone : '',   // Phone: once per order
-                    4  => $isFirst ? $areaName  : '',   // Area: once per order
+                    1  => $no,                         // No: increments every item row
+                    2  => $isFirst ? $custName  : '',  // Name: once per customer
+                    3  => $isFirst ? $custPhone : '',  // Phone: once per customer
+                    4  => $isFirst ? $areaName  : '',  // Area: once per customer
                     5  => $this->extractCode($item->product_name),
                     6  => $item->color ?? '',
                     7  => $item->size  ?? '',
                     8  => (float) $item->price,
-                    9  => ($isFirst && $totalDP > 0) ? $totalDP : '', // Total DP: once per order
-                    10 => $isFirst ? $orderDate : '',   // Date: once per order
-                    11 => $isFirst ? $an    : '',       // AN: once per order
-                    12 => $isFirst ? $notes : '',       // Notes: once per order
+                    9  => ($isFirst && $totalDP > 0) ? $totalDP : '', // Total DP: once per customer
+                    10 => $isFirst ? $firstDate : '',  // Date: once per customer
+                    11 => $isFirst ? $custName  : '',  // AN: once per customer
+                    12 => $isFirst ? $notes     : '',  // Notes: once per customer
                 ];
 
                 foreach ($values as $col => $value) {
@@ -330,9 +355,8 @@ class ImportExportController extends Controller
                 ]);
 
                 $rowNum++;
+                $no++; // Increment No every item row
             }
-
-            $no++; // Increment No per ORDER, after all its item rows
         }
 
         // ── Column widths
