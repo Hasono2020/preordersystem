@@ -12,10 +12,26 @@ const STATUS_LABELS: Record<string, string> = {
     bought: 'Bought', keep: 'Keep', sold_out: 'Sold Out',
 };
 
+function deriveDiscount(order: any) {
+    const totalDiscount    = Number(order.discount);
+    const shippingPerKg    = Number(order.shipping_fee_per_kg);
+    const weight           = Number(order.weight ?? 0);
+    const totalShipping    = Number(order.total_shipping_fee);
+    const rawShipping      = shippingPerKg * weight;
+    const freeShipping     = Math.min(Math.max(rawShipping - totalShipping, 0), totalDiscount);
+    const priceDiscount    = totalDiscount - freeShipping;
+    return { totalDiscount, freeShipping, priceDiscount, rawShipping };
+}
+
 export default function OrderShow({ order }: any) {
     function destroy() {
         if (confirm('Delete this order?')) router.delete(`/orders/${order.id}`);
     }
+
+    const { totalDiscount, freeShipping, priceDiscount, rawShipping } = deriveDiscount(order);
+    const itemsTotal   = order.items.reduce((s: number, i: any) => s + Number(i.total_price), 0);
+    const weight       = Number(order.weight ?? 0);
+    const shippingPerKg = Number(order.shipping_fee_per_kg);
 
     return (
         <>
@@ -47,11 +63,8 @@ export default function OrderShow({ order }: any) {
                 <div className="grid grid-cols-2 gap-4 rounded-lg border p-4 text-sm">
                     <div><span className="text-muted-foreground">Customer</span><p className="font-medium">{order.customer?.name}</p></div>
                     <div><span className="text-muted-foreground">Date</span><p className="font-medium">
-                                                                                {new Date(order.order_date).toLocaleDateString('en-GB', {
-                                                                                    day: '2-digit', month: 'short', year: 'numeric'
-                                                                                })}
-                                                                            </p>
-                    </div>
+                        {new Date(order.order_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </p></div>
                     <div><span className="text-muted-foreground">Courier</span><p className="font-medium">{order.courier ?? '—'}</p></div>
                     <div><span className="text-muted-foreground">Recorded by</span><p className="font-medium">{order.user?.name ?? <span className="text-muted-foreground italic">Deleted user</span>}</p></div>
                     {order.notes && (
@@ -93,13 +106,59 @@ export default function OrderShow({ order }: any) {
                 {/* Payment summary */}
                 <div className="rounded-lg border p-4 space-y-2 text-sm">
                     <h2 className="font-medium mb-3">Payment summary</h2>
-                    <div className="flex justify-between"><span className="text-muted-foreground">Discount</span><span>- {Number(order.discount).toLocaleString()}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">Shipping fee</span><span>{Number(order.shipping_fee).toLocaleString()}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">Shipping fee / kg</span><span>{Number(order.shipping_fee_per_kg).toLocaleString()}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">Total shipping</span><span>{Number(order.total_shipping_fee).toLocaleString()}</span></div>
-                    <div className="flex justify-between font-semibold border-t pt-2"><span>Grand total</span><span>{Number(order.total_price).toLocaleString()}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">Down payment</span><span>- {Number(order.down_payment).toLocaleString()}</span></div>
-                    <div className="flex justify-between font-semibold text-orange-600"><span>Remaining</span><span>{Number(order.remaining_payment).toLocaleString()}</span></div>
+
+                    <div className="flex justify-between">
+                        <span className="text-muted-foreground">Items subtotal</span>
+                        <span>{itemsTotal.toLocaleString()}</span>
+                    </div>
+
+                    <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                            Shipping ({weight}kg × {shippingPerKg.toLocaleString()}/kg)
+                        </span>
+                        <span>+ {rawShipping.toLocaleString()}</span>
+                    </div>
+
+                    {/* Promo discount breakdown */}
+                    {totalDiscount > 0 && (
+                        <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2.5 space-y-1.5">
+                            <p className="text-xs font-semibold text-green-700">🎉 Promo discount</p>
+                            {priceDiscount > 0 && (
+                                <div className="flex justify-between text-green-700">
+                                    <span>Product discount</span>
+                                    <span className="font-medium">- {priceDiscount.toLocaleString()}</span>
+                                </div>
+                            )}
+                            {freeShipping > 0 && (
+                                <div className="flex justify-between text-green-700">
+                                    <span>Free shipping</span>
+                                    <span className="font-medium">- {freeShipping.toLocaleString()}</span>
+                                </div>
+                            )}
+                            <div className="flex justify-between text-green-800 font-semibold border-t border-green-200 pt-1.5">
+                                <span>Total savings</span>
+                                <span>- {totalDiscount.toLocaleString()}</span>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex justify-between">
+                        <span className="text-muted-foreground">Total shipping</span>
+                        <span>+ {Number(order.total_shipping_fee).toLocaleString()}</span>
+                    </div>
+
+                    <div className="flex justify-between font-semibold border-t pt-2">
+                        <span>Grand total</span>
+                        <span>{Number(order.total_price).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-muted-foreground">Down payment</span>
+                        <span>- {Number(order.down_payment).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold text-orange-600">
+                        <span>Remaining</span>
+                        <span>{Number(order.remaining_payment).toLocaleString()}</span>
+                    </div>
                 </div>
             </div>
         </>

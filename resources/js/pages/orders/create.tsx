@@ -576,15 +576,6 @@ export default function OrderCreate({ customers, areas }: any) {
                                 {Number(data.total_shipping_fee).toLocaleString()}
                             </div>
                         </div>
-                        <div className="space-y-1">
-                            <Label>Discount</Label>
-                            <Input
-                                type="number" min="0"
-                                onWheel={noScroll}
-                                value={data.discount || ''}
-                                onChange={e => setData('discount', parseFloat(e.target.value) || 0)}
-                            />
-                        </div>
                         <div className="space-y-1 col-span-2">
                             <Label>Down payment</Label>
                             <Input

@@ -5,6 +5,17 @@ const STATUS_LABELS: Record<string, string> = {
     bought: 'Bought', keep: 'Keep', sold_out: 'Sold Out',
 };
 
+function deriveDiscount(order: any) {
+    const totalDiscount = Number(order.discount);
+    const shippingPerKg = Number(order.shipping_fee_per_kg);
+    const weight        = Number(order.weight ?? 0);
+    const totalShipping = Number(order.total_shipping_fee);
+    const rawShipping   = shippingPerKg * weight;
+    const freeShipping  = Math.min(Math.max(rawShipping - totalShipping, 0), totalDiscount);
+    const priceDiscount = totalDiscount - freeShipping;
+    return { totalDiscount, freeShipping, priceDiscount };
+}
+
 export default function CustomerPrint({ customer, summary }: any) {
 
     useEffect(() => {
@@ -41,9 +52,14 @@ export default function CustomerPrint({ customer, summary }: any) {
                 th.right, td.right { text-align: right; }
                 td { padding: 7px 12px; border-bottom: 1px solid #eee; }
                 tr:last-child td { border-bottom: none; }
-                .order-footer { background: #f9f9f9; border-top: 1px solid #ccc; padding: 8px 12px; display: flex; justify-content: flex-end; gap: 32px; font-size: 12px; }
-                .order-footer span { color: #555; }
-                .order-footer strong { color: #000; }
+                .order-footer { border-top: 1px solid #ccc; }
+                .order-footer-summary { background: #f9f9f9; padding: 8px 12px; display: flex; justify-content: flex-end; gap: 32px; font-size: 12px; }
+                .order-footer-summary span { color: #555; }
+                .order-footer-summary strong { color: #000; }
+                .promo-box { background: #f0faf0; border-top: 1px solid #c3e6cb; padding: 8px 12px; font-size: 11px; }
+                .promo-box-title { font-weight: bold; color: #276749; margin-bottom: 5px; }
+                .promo-row { display: flex; justify-content: space-between; color: #276749; padding: 2px 0; }
+                .promo-row.total { font-weight: bold; border-top: 1px solid #c3e6cb; margin-top: 4px; padding-top: 5px; }
                 .remaining-due { color: #c00; font-weight: bold; }
                 .remaining-paid { color: #060; font-weight: bold; }
                 .page-footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #ccc; text-align: center; font-size: 11px; color: #888; }
@@ -100,73 +116,103 @@ export default function CustomerPrint({ customer, summary }: any) {
                             No orders found for this customer.
                         </p>
                     ) : (
-                        customer.orders.map((order: any) => (
-                            <div className="order-block" key={order.id}>
+                        customer.orders.map((order: any) => {
+                            const { totalDiscount, freeShipping, priceDiscount } = deriveDiscount(order);
+                            const hasBreakdown = totalDiscount > 0 && (freeShipping > 0 || priceDiscount > 0);
 
-                                {/* Order header */}
-                                <div className="order-header">
-                                    <div className="order-header-left">
-                                        <strong>Order #{order.id}</strong>
-                                        <span>{new Date(order.order_date).toLocaleDateString('en-GB', {
-                                            day: '2-digit', month: 'short', year: 'numeric'
-                                        })}</span>
-                                        <span className="badge">{STATUS_LABELS[order.status]}</span>
-                                        {order.courier && <span style={{ color: '#555' }}>via {order.courier}</span>}
+                            return (
+                                <div className="order-block" key={order.id}>
+
+                                    {/* Order header */}
+                                    <div className="order-header">
+                                        <div className="order-header-left">
+                                            <strong>Order #{order.id}</strong>
+                                            <span>{new Date(order.order_date).toLocaleDateString('en-GB', {
+                                                day: '2-digit', month: 'short', year: 'numeric'
+                                            })}</span>
+                                            <span className="badge">{STATUS_LABELS[order.status]}</span>
+                                            {order.courier && <span style={{ color: '#555' }}>via {order.courier}</span>}
+                                        </div>
+                                        <strong>Total: {Number(order.total_price).toLocaleString()}</strong>
                                     </div>
-                                    <strong>Total: {Number(order.total_price).toLocaleString()}</strong>
-                                </div>
 
-                                {/* Items table */}
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Product</th>
-                                            <th>Color</th>
-                                            <th>Size</th>
-                                            <th className="right">Qty</th>
-                                            <th className="right">Price</th>
-                                            <th className="right">Total</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {order.items.map((item: any) => (
-                                            <tr key={item.id}>
-                                                <td><strong>{item.product_name}</strong></td>
-                                                <td>{item.color ?? '—'}</td>
-                                                <td>{item.size ?? '—'}</td>
-                                                <td className="right">{item.quantity}</td>
-                                                <td className="right">{Number(item.price).toLocaleString()}</td>
-                                                <td className="right">{Number(item.total_price).toLocaleString()}</td>
+                                    {/* Items table */}
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Product</th>
+                                                <th>Color</th>
+                                                <th>Size</th>
+                                                <th className="right">Qty</th>
+                                                <th className="right">Price</th>
+                                                <th className="right">Total</th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                        </thead>
+                                        <tbody>
+                                            {order.items.map((item: any) => (
+                                                <tr key={item.id}>
+                                                    <td><strong>{item.product_name}</strong></td>
+                                                    <td>{item.color ?? '—'}</td>
+                                                    <td>{item.size ?? '—'}</td>
+                                                    <td className="right">{item.quantity}</td>
+                                                    <td className="right">{Number(item.price).toLocaleString()}</td>
+                                                    <td className="right">{Number(item.total_price).toLocaleString()}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
 
-                                {/* Payment footer */}
-                                <div className="order-footer">
-                                    <div>
-                                        <span>Discount: </span>
-                                        <strong>{Number(order.discount).toLocaleString()}</strong>
-                                    </div>
-                                    <div>
-                                        <span>Shipping: </span>
-                                        <strong>{Number(order.total_shipping_fee).toLocaleString()}</strong>
-                                    </div>
-                                    <div>
-                                        <span>Down Payment: </span>
-                                        <strong>{Number(order.down_payment).toLocaleString()}</strong>
-                                    </div>
-                                    <div>
-                                        <span>Remaining: </span>
-                                        <strong className={Number(order.remaining_payment) > 0 ? 'remaining-due' : 'remaining-paid'}>
-                                            {Number(order.remaining_payment) > 0
-                                                ? Number(order.remaining_payment).toLocaleString()
-                                                : 'PAID'}
-                                        </strong>
+                                    {/* Promo breakdown (only when discount > 0) */}
+                                    {hasBreakdown && (
+                                        <div className="promo-box">
+                                            <div className="promo-box-title">🎉 Promo discount</div>
+                                            {priceDiscount > 0 && (
+                                                <div className="promo-row">
+                                                    <span>Product discount</span>
+                                                    <span>- {priceDiscount.toLocaleString()}</span>
+                                                </div>
+                                            )}
+                                            {freeShipping > 0 && (
+                                                <div className="promo-row">
+                                                    <span>Free shipping</span>
+                                                    <span>- {freeShipping.toLocaleString()}</span>
+                                                </div>
+                                            )}
+                                            <div className="promo-row total">
+                                                <span>Total savings</span>
+                                                <span>- {totalDiscount.toLocaleString()}</span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Payment footer */}
+                                    <div className="order-footer-summary">
+                                        {!hasBreakdown && totalDiscount > 0 && (
+                                            <div>
+                                                <span>Discount: </span>
+                                                <strong>{totalDiscount.toLocaleString()}</strong>
+                                            </div>
+                                        )}
+                                        <div>
+                                            <span>Shipping: </span>
+                                            <strong>{Number(order.total_shipping_fee).toLocaleString()}</strong>
+                                        </div>
+                                        <div>
+                                            <span>Down Payment: </span>
+                                            <strong>{Number(order.down_payment).toLocaleString()}</strong>
+                                        </div>
+                                        <div>
+                                            <span>Remaining: </span>
+                                            <strong className={Number(order.remaining_payment) > 0 ? 'remaining-due' : 'remaining-paid'}>
+                                                {Number(order.remaining_payment) > 0
+                                                    ? Number(order.remaining_payment).toLocaleString()
+                                                    : 'PAID'}
+                                            </strong>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        ))
+                            );
+                        })
                     )}
                 </div>
 

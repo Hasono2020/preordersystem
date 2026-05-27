@@ -203,8 +203,10 @@ export default function OrderEdit({ order, customers, areas }: any) {
                             </select>
                         </div>
                         <div className="space-y-1">
-                            <Label>Discount</Label>
-                            <Input type="number" min="0" value={data.discount || ''} onChange={e => setData('discount', parseFloat(e.target.value) || 0)} />
+                            <Label>Discount <span className="text-xs font-normal text-muted-foreground">(auto-applied by promo rules)</span></Label>
+                            <div className="rounded-md border px-3 py-2 text-sm bg-muted text-muted-foreground">
+                                {Number(data.discount).toLocaleString()}
+                            </div>
                         </div>
                         <div className="space-y-1">
                             <Label>Shipping fee</Label>
