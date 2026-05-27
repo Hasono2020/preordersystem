@@ -11,7 +11,7 @@ class Order extends Model
 
     protected $fillable = [
         'customer_id', 'user_id', 'order_date', 'status',
-        'discount', 'shipping_fee', 'shipping_fee_per_kg',
+        'discount', 'discount_product', 'discount_shipping', 'shipping_fee', 'shipping_fee_per_kg',
         'total_shipping_fee', 'down_payment', 'remaining_payment',
         'courier', 'weight', 'total_price', 'notes',
     ];

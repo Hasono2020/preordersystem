@@ -12,26 +12,16 @@ const STATUS_LABELS: Record<string, string> = {
     bought: 'Bought', keep: 'Keep', sold_out: 'Sold Out',
 };
 
-function deriveDiscount(order: any) {
-    const totalDiscount    = Number(order.discount);
-    const shippingPerKg    = Number(order.shipping_fee_per_kg);
-    const weight           = Number(order.weight ?? 0);
-    const totalShipping    = Number(order.total_shipping_fee);
-    const rawShipping      = shippingPerKg * weight;
-    const freeShipping     = Math.min(Math.max(rawShipping - totalShipping, 0), totalDiscount);
-    const priceDiscount    = totalDiscount - freeShipping;
-    return { totalDiscount, freeShipping, priceDiscount, rawShipping };
-}
-
 export default function OrderShow({ order }: any) {
     function destroy() {
         if (confirm('Delete this order?')) router.delete(`/orders/${order.id}`);
     }
 
-    const { totalDiscount, freeShipping, priceDiscount, rawShipping } = deriveDiscount(order);
-    const itemsTotal   = order.items.reduce((s: number, i: any) => s + Number(i.total_price), 0);
-    const weight       = Number(order.weight ?? 0);
-    const shippingPerKg = Number(order.shipping_fee_per_kg);
+    const discountProduct  = Number(order.discount_product  ?? 0);
+    const discountShipping = Number(order.discount_shipping ?? 0);
+    const totalDiscount    = Number(order.discount);
+    const hasBreakdown     = discountProduct > 0 || discountShipping > 0;
+    const itemsTotal       = order.items.reduce((s: number, i: any) => s + Number(i.total_price), 0);
 
     return (
         <>
@@ -112,27 +102,29 @@ export default function OrderShow({ order }: any) {
                         <span>{itemsTotal.toLocaleString()}</span>
                     </div>
 
-                    <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                            Shipping ({weight}kg × {shippingPerKg.toLocaleString()}/kg)
-                        </span>
-                        <span>+ {rawShipping.toLocaleString()}</span>
-                    </div>
-
                     {/* Promo discount breakdown */}
                     {totalDiscount > 0 && (
                         <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2.5 space-y-1.5">
                             <p className="text-xs font-semibold text-green-700">🎉 Promo discount</p>
-                            {priceDiscount > 0 && (
+                            {hasBreakdown ? (
+                                <>
+                                    {discountProduct > 0 && (
+                                        <div className="flex justify-between text-green-700">
+                                            <span>Product discount</span>
+                                            <span className="font-medium">- {discountProduct.toLocaleString()}</span>
+                                        </div>
+                                    )}
+                                    {discountShipping > 0 && (
+                                        <div className="flex justify-between text-green-700">
+                                            <span>Shipping fee deduction</span>
+                                            <span className="font-medium">- {discountShipping.toLocaleString()}</span>
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
                                 <div className="flex justify-between text-green-700">
-                                    <span>Product discount</span>
-                                    <span className="font-medium">- {priceDiscount.toLocaleString()}</span>
-                                </div>
-                            )}
-                            {freeShipping > 0 && (
-                                <div className="flex justify-between text-green-700">
-                                    <span>Free shipping</span>
-                                    <span className="font-medium">- {freeShipping.toLocaleString()}</span>
+                                    <span>Discount</span>
+                                    <span className="font-medium">- {totalDiscount.toLocaleString()}</span>
                                 </div>
                             )}
                             <div className="flex justify-between text-green-800 font-semibold border-t border-green-200 pt-1.5">
@@ -143,7 +135,7 @@ export default function OrderShow({ order }: any) {
                     )}
 
                     <div className="flex justify-between">
-                        <span className="text-muted-foreground">Total shipping</span>
+                        <span className="text-muted-foreground">Shipping</span>
                         <span>+ {Number(order.total_shipping_fee).toLocaleString()}</span>
                     </div>
 

@@ -5,17 +5,6 @@ const STATUS_LABELS: Record<string, string> = {
     bought: 'Bought', keep: 'Keep', sold_out: 'Sold Out',
 };
 
-function deriveDiscount(order: any) {
-    const totalDiscount = Number(order.discount);
-    const shippingPerKg = Number(order.shipping_fee_per_kg);
-    const weight        = Number(order.weight ?? 0);
-    const totalShipping = Number(order.total_shipping_fee);
-    const rawShipping   = shippingPerKg * weight;
-    const freeShipping  = Math.min(Math.max(rawShipping - totalShipping, 0), totalDiscount);
-    const priceDiscount = totalDiscount - freeShipping;
-    return { totalDiscount, freeShipping, priceDiscount };
-}
-
 export default function CustomerPrint({ customer, summary }: any) {
 
     useEffect(() => {
@@ -117,8 +106,10 @@ export default function CustomerPrint({ customer, summary }: any) {
                         </p>
                     ) : (
                         customer.orders.map((order: any) => {
-                            const { totalDiscount, freeShipping, priceDiscount } = deriveDiscount(order);
-                            const hasBreakdown = totalDiscount > 0 && (freeShipping > 0 || priceDiscount > 0);
+                            const discountProduct  = Number(order.discount_product  ?? 0);
+                            const discountShipping = Number(order.discount_shipping ?? 0);
+                            const totalDiscount    = Number(order.discount);
+                            const hasBreakdown     = discountProduct > 0 || discountShipping > 0;
 
                             return (
                                 <div className="order-block" key={order.id}>
@@ -163,19 +154,28 @@ export default function CustomerPrint({ customer, summary }: any) {
                                     </table>
 
                                     {/* Promo breakdown (only when discount > 0) */}
-                                    {hasBreakdown && (
+                                    {totalDiscount > 0 && (
                                         <div className="promo-box">
                                             <div className="promo-box-title">🎉 Promo discount</div>
-                                            {priceDiscount > 0 && (
+                                            {hasBreakdown ? (
+                                                <>
+                                                    {discountProduct > 0 && (
+                                                        <div className="promo-row">
+                                                            <span>Product discount</span>
+                                                            <span>- {discountProduct.toLocaleString()}</span>
+                                                        </div>
+                                                    )}
+                                                    {discountShipping > 0 && (
+                                                        <div className="promo-row">
+                                                            <span>Shipping fee deduction</span>
+                                                            <span>- {discountShipping.toLocaleString()}</span>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            ) : (
                                                 <div className="promo-row">
-                                                    <span>Product discount</span>
-                                                    <span>- {priceDiscount.toLocaleString()}</span>
-                                                </div>
-                                            )}
-                                            {freeShipping > 0 && (
-                                                <div className="promo-row">
-                                                    <span>Free shipping</span>
-                                                    <span>- {freeShipping.toLocaleString()}</span>
+                                                    <span>Discount</span>
+                                                    <span>- {totalDiscount.toLocaleString()}</span>
                                                 </div>
                                             )}
                                             <div className="promo-row total">
@@ -187,12 +187,6 @@ export default function CustomerPrint({ customer, summary }: any) {
 
                                     {/* Payment footer */}
                                     <div className="order-footer-summary">
-                                        {!hasBreakdown && totalDiscount > 0 && (
-                                            <div>
-                                                <span>Discount: </span>
-                                                <strong>{totalDiscount.toLocaleString()}</strong>
-                                            </div>
-                                        )}
                                         <div>
                                             <span>Shipping: </span>
                                             <strong>{Number(order.total_shipping_fee).toLocaleString()}</strong>

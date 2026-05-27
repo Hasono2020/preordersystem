@@ -33,6 +33,8 @@ export default function OrderCreate({ customers, areas }: any) {
         order_date:           new Date().toISOString().slice(0, 10),
         status:               'bought',
         discount:             0,
+        discount_product:     0,
+        discount_shipping:    0,
         shipping_fee_per_kg:  0,
         total_shipping_fee:   0,
         weight:               0,
@@ -141,7 +143,7 @@ export default function OrderCreate({ customers, areas }: any) {
         setActivePromo(best);
 
         if (!best) {
-            setData(prev => ({ ...prev, discount: 0 }));
+            setData(prev => ({ ...prev, discount: 0, discount_product: 0, discount_shipping: 0 }));
             return;
         }
 
@@ -149,9 +151,10 @@ export default function OrderCreate({ customers, areas }: any) {
         const freeShip        = Math.min(shippingFee, best.free_shipping_max);
         const discountFlat    = best.discount_flat;
         const discountPerItem = best.discount_per_item * totalQty;
-        const totalDiscount   = discountFlat + discountPerItem + freeShip;
+        const productDiscount = discountFlat + discountPerItem;
+        const totalDiscount   = productDiscount + freeShip;
 
-        setData(prev => ({ ...prev, discount: totalDiscount }));
+        setData(prev => ({ ...prev, discount: totalDiscount, discount_product: productDiscount, discount_shipping: freeShip }));
     }, [data.items, data.total_shipping_fee, data.customer_id, data.new_customer_type, customerMode, promoRules]);
 
     async function searchProduct(i: number, query: string) {
