@@ -69,8 +69,13 @@ class UserController extends Controller
 
     public function destroy(User $user)
     {
-        /** @var \App\Models\User $authUser */
-        $authUser = auth()->user();
+        // Use request()->user() cast to our User model to satisfy Intelephense
+        /** @var User $authUser */
+        $authUser = request()->user();
+
+        if ($authUser === null) {
+            return back()->with('error', 'Unauthenticated.');
+        }
 
         if ($user->id === $authUser->id) {
             return back()->with('error', 'You cannot delete your own account.');
