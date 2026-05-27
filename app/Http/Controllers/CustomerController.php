@@ -1,16 +1,11 @@
 <?php
-// ============================================================
-// FIX 1b: app/Http/Controllers/CustomerController.php
-// Removed 'flat_price' from the get() column list in edit().
-// That column was dropped from the DB but was still being
-// selected here, which would throw a SQL error.
-// ============================================================
 
 namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use App\Models\ShippingArea;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 
 class CustomerController extends Controller
@@ -44,7 +39,6 @@ class CustomerController extends Controller
 
     public function edit(Customer $customer)
     {
-        // FIX 1b: Removed 'flat_price' from column list — column no longer exists
         $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
         return Inertia::render('customers/edit', compact('customer', 'areas'));
     }
@@ -66,7 +60,15 @@ class CustomerController extends Controller
 
     public function destroy(Customer $customer)
     {
+        // FIX 7: Block deletion if the customer has existing orders.
+        // This prevents orphaned orders (SQLite) or a foreign key crash (MySQL).
+        if ($customer->orders()->exists()) {
+            return redirect()->route('customers.index')
+                ->with('error', "Cannot delete \"{$customer->name}\" — they have existing orders. Delete the orders first.");
+        }
+
         $customer->delete();
+
         return redirect()->route('customers.index')
             ->with('success', 'Customer deleted.');
     }
@@ -87,10 +89,18 @@ class CustomerController extends Controller
 
     public function bulkDelete(Request $request)
     {
-        // If 'all' flag is true, delete ALL customers
+        // FIX 4: The "delete all" flag is restricted to admins only.
+        // Staff can still delete selected customers by ID, just not wipe everything.
         if ($request->boolean('all')) {
+            /** @var \App\Models\User $user */
+            $user = Auth::user();
+            if (!$user->isAdmin()) {
+                abort(403, 'Only administrators can delete all customers.');
+            }
+
             $count = Customer::count();
             Customer::query()->delete();
+
             return redirect()->route('customers.index')
                 ->with('success', "{$count} customers deleted successfully.");
         }

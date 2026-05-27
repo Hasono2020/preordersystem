@@ -96,6 +96,7 @@ class ImportExportController extends Controller
                 if ($name !== $lastName) {
                     $lastDP   = 0;
                     $lastDate = null;
+                    $lastPrice = 0;
                 }
                 $lastName  = $name;
                 $lastPhone = trim((string)($row[2] ?? ''));
@@ -164,14 +165,14 @@ class ImportExportController extends Controller
             $customerFirstDate = [];
 
             foreach ($data as $row) {
-                $name = $row['name'];
-                if (!isset($customerFirstDate[$name])) {
-                    $customerFirstDate[$name] = $row['order_date'];
+                $key = $row['name'] . '||' . $row['order_date'];
+                if (!isset($customerFirstDate[$key])) {
+                    $customerFirstDate[$key] = $row['order_date'];
                 }
-                $grouped[$name][] = $row;
+                $grouped[$key][] = $row;
             }
 
-            foreach ($grouped as $customerName => $rows) {
+            foreach ($grouped as $key => $rows) {
                 $first = $rows[0];
                 try {
                     // FIX 1: Use firstOrCreate keyed on name + phone so that
@@ -200,7 +201,7 @@ class ImportExportController extends Controller
                     }
 
                     $remaining = $itemsTotal - $downPayment;
-                    $orderDate = $customerFirstDate[$customerName] ?? now()->format('Y-m-d');
+                    $orderDate = $customerFirstDate[$key] ?? now()->format('Y-m-d');
 
                     $order = Order::create([
                         'customer_id'         => $customer->id,

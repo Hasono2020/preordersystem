@@ -1,321 +1,291 @@
 <?php
-// ============================================================
-// FIX 6: ImportExportController — log errors instead of
-//         silently swallowing them. The catch block now writes
-//         a warning to the Laravel log so you can see exactly
-//         which rows failed and why.
-//
-// Only the import() method changes; the rest is unchanged.
-// ============================================================
-
-namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use App\Models\Order;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Session;
-use Inertia\Inertia;
-use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
-use PhpOffice\PhpSpreadsheet\IOFactory;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Style\Alignment;
-use PhpOffice\PhpSpreadsheet\Style\Border;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use App\Models\Product;
+use App\Models\User;
 
-class ImportExportController extends Controller
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function makeStaff(): User
 {
-    public function index()
-    {
-        return Inertia::render('import-export/index');
-    }
-
-    public function preview(Request $request)
-    {
-        $request->validate([
-            'file' => 'required|file|mimes:xlsx,xls|max:20480',
-        ]);
-
-        $path        = $request->file('file')->store('imports');
-        $fullPath    = storage_path('app/private/' . $path);
-        $spreadsheet = IOFactory::load($fullPath);
-        $sheetNames  = $spreadsheet->getSheetNames();
-        $sheetIndex  = array_search('PO CHN', $sheetNames);
-
-        if ($sheetIndex === false) {
-            return back()->with('error', 'Sheet "PO CHN" not found in the uploaded file.');
-        }
-
-        $sheet   = $spreadsheet->getSheet((int) $sheetIndex);
-        $rows    = $sheet->toArray(null, true, true, false);
-        $preview = $this->parseRows($rows);
-
-        session(['import_data' => $preview, 'import_path' => $path]);
-
-        return Inertia::render('import-export/preview', [
-            'preview'   => array_slice($preview, 0, 50),
-            'totalRows' => count($preview),
-        ]);
-    }
-
-    private function parseRows(array $rows): array
-    {
-        $parsed    = [];
-        $lastName  = '';
-        $lastPhone = '';
-        $lastCity  = '';
-        $lastDP    = 0;
-        $lastDate  = null;
-        $lastPrice = 0;
-
-        foreach ($rows as $i => $row) {
-            if ($i <= 1) continue;
-
-            $row = array_values($row);
-
-            $name = trim((string)($row[2] ?? ''));
-            $code = trim((string)($row[5] ?? ''));
-
-            if ($code === '' || $code === '#N/A') continue;
-
-            if ($name !== '') {
-                $lastName  = $name;
-                $lastPhone = trim((string)($row[3] ?? ''));
-                $lastCity  = trim((string)($row[4] ?? ''));
-            }
-
-            if ($lastName === '') continue;
-
-            $rawDate = $row[10] ?? null;
-            if ($rawDate instanceof \DateTime) {
-                $lastDate = $rawDate->format('Y-m-d');
-            } elseif ($rawDate && is_numeric($rawDate)) {
-                try {
-                    $lastDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float)$rawDate)->format('Y-m-d');
-                } catch (\Exception $e) {}
-            } elseif ($rawDate) {
-                try { $lastDate = \Carbon\Carbon::parse((string)$rawDate)->format('Y-m-d'); } catch (\Exception $e) {}
-            }
-
-            $rowPrice = isset($row[8]) && is_numeric($row[8]) && (float)$row[8] > 0 ? (float)$row[8] : null;
-            if ($rowPrice !== null) {
-                $lastPrice = $rowPrice;
-            }
-
-            $rowDP = isset($row[9]) && is_numeric($row[9]) && (float)$row[9] > 0 ? (float)$row[9] : null;
-            if ($rowDP !== null) {
-                $lastDP = $rowDP;
-            }
-
-            $parsed[] = [
-                'name'         => $lastName,
-                'phone'        => $lastPhone,
-                'city'         => $lastCity,
-                'product_code' => $code,
-                'color'        => trim((string)($row[6] ?? '')),
-                'size'         => trim((string)($row[7] ?? '')),
-                'price'        => $lastPrice,
-                'down_payment' => $lastDP,
-                'order_date'   => $lastDate ?? now()->format('Y-m-d'),
-                'notes'        => trim((string)($row[12] ?? '')),
-                'row_dp'       => $rowDP,
-            ];
-        }
-
-        return $parsed;
-    }
-
-    public function import()
-    {
-        $data = session('import_data', []);
-
-        if (empty($data)) {
-            return redirect()->route('import-export.index')
-                ->with('error', 'No import data found. Please upload again.');
-        }
-
-        $imported = 0;
-        $skipped  = 0;
-
-        DB::transaction(function () use ($data, &$imported, &$skipped) {
-            $grouped           = [];
-            $customerFirstDate = [];
-
-            foreach ($data as $row) {
-                $name = $row['name'];
-                if (!isset($customerFirstDate[$name])) {
-                    $customerFirstDate[$name] = $row['order_date'];
-                }
-                $grouped[$name][] = $row;
-            }
-
-            foreach ($grouped as $customerName => $rows) {
-                $first = $rows[0];
-                try {
-                    $customer = Customer::create([
-                        'name'    => $first['name'],
-                        'phone'   => $first['phone'] ?: null,
-                        'address' => $first['city'] ?: null,
-                    ]);
-
-                    $itemsTotal  = collect($rows)->sum('price');
-                    $downPayment = 0;
-                    foreach ($rows as $row) {
-                        if (!empty($row['row_dp']) && $row['row_dp'] > 0) {
-                            $downPayment = $row['row_dp'];
-                            break;
-                        }
-                    }
-
-                    $remaining = $itemsTotal - $downPayment;
-                    $orderDate = $customerFirstDate[$customerName] ?? now()->format('Y-m-d');
-
-                    $order = Order::create([
-                        'customer_id'         => $customer->id,
-                        'user_id'             => Auth::id(),
-                        'order_date'          => $orderDate,
-                        'status'              => 'bought',
-                        'discount'            => 0,
-                        'shipping_fee'        => 0,
-                        'shipping_fee_per_kg' => 0,
-                        'total_shipping_fee'  => 0,
-                        'weight'              => 0,
-                        'down_payment'        => $downPayment,
-                        'remaining_payment'   => $remaining,
-                        'total_price'         => $itemsTotal,
-                        'notes'               => $first['notes'] ?: null,
-                    ]);
-
-                    foreach ($rows as $row) {
-                        $order->items()->create([
-                            'product_name' => $row['product_code'],
-                            'color'        => $row['color'] ?: null,
-                            'size'         => $row['size'] ?: null,
-                            'quantity'     => 1,
-                            'price'        => $row['price'],
-                            'total_price'  => $row['price'],
-                        ]);
-                    }
-
-                    $imported++;
-                } catch (\Exception $e) {
-                    // FIX 6: Log the error so it's visible in storage/logs/laravel.log
-                    //         instead of silently disappearing.
-                    Log::warning('Import row skipped', [
-                        'customer' => $first['name'] ?? 'unknown',
-                        'error'    => $e->getMessage(),
-                        'file'     => $e->getFile(),
-                        'line'     => $e->getLine(),
-                    ]);
-                    $skipped++;
-                }
-            }
-        });
-
-        Session::forget(['import_data', 'import_path']);
-
-        $message = "Import complete! {$imported} orders imported.";
-        if ($skipped > 0) {
-            $message .= " {$skipped} skipped — check storage/logs/laravel.log for details.";
-        }
-
-        return redirect()->route('orders.index')->with('success', $message);
-    }
-
-    public function export()
-    {
-        $orders = Order::with(['customer.area', 'items'])
-            ->latest()
-            ->get();
-
-        $spreadsheet = new Spreadsheet();
-        /** @var \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet */
-        $sheet = $spreadsheet->getActiveSheet() ?? $spreadsheet->createSheet();
-        $sheet->setTitle('PO CHN');
-
-        $sheet->mergeCells('A1:M1');
-        $sheet->getCell('A1')->setValue('LIST ORDERAN CUSTOMER');
-        $sheet->getStyle('A1')->applyFromArray([
-            'font'      => ['bold' => true, 'size' => 14],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-            'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFE699']],
-        ]);
-        $sheet->getRowDimension(1)->setRowHeight(25);
-
-        $headers = ['KET','NO','NAMA','IG/WA','KOTA','KODE','WARNA','SIZE','HARGA SATUAN','DP','TGL DP','AN','KET'];
-        foreach ($headers as $col => $header) {
-            $colLetter = Coordinate::stringFromColumnIndex($col + 1);
-            $sheet->getCell($colLetter . '2')->setValue($header);
-        }
-        $sheet->getStyle('A2:M2')->applyFromArray([
-            'font'      => ['bold' => true],
-            'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'BDD7EE']],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-            'borders'   => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
-        ]);
-
-        $row = 3;
-        $no  = 1;
-
-        foreach ($orders as $order) {
-            $itemsArray = $order->items->values();
-            $totalDP    = $order->down_payment;
-            $orderDate  = $order->order_date ? $order->order_date->format('Y-m-d') : '';
-            $custName   = $order->customer->name ?? '';
-            $custPhone  = $order->customer->phone ?? '';
-            $custCity   = $order->customer->area->name ?? $order->customer->address ?? '';
-
-            foreach ($itemsArray as $idx => $item) {
-                $isFirst = ($idx === 0);
-
-                $values = [
-                    1  => '',
-                    2  => $no,
-                    3  => $isFirst ? $custName  : '',
-                    4  => $isFirst ? $custPhone : '',
-                    5  => $isFirst ? $custCity  : '',
-                    6  => $item->product_name,
-                    7  => $item->color ?? '',
-                    8  => $item->size  ?? '',
-                    9  => $item->price,
-                    10 => $isFirst && $totalDP > 0 ? $totalDP : '',
-                    11 => $isFirst ? $orderDate : '',
-                    12 => $isFirst ? $custName  : '',
-                    13 => $isFirst ? ($order->notes ?? '') : '',
-                ];
-
-                foreach ($values as $col => $value) {
-                    $colLetter = Coordinate::stringFromColumnIndex($col);
-                    $sheet->getCell($colLetter . $row)->setValue($value);
-                }
-
-                $sheet->getStyle("A{$row}:M{$row}")->applyFromArray([
-                    'borders' => ['allBorders' => [
-                        'borderStyle' => Border::BORDER_THIN,
-                        'color'       => ['rgb' => 'D9D9D9'],
-                    ]],
-                ]);
-
-                $no++;
-                $row++;
-            }
-        }
-
-        $widths = [1=>8, 2=>6, 3=>20, 4=>12, 5=>15, 6=>10, 7=>10, 8=>8, 9=>15, 10=>15, 11=>12, 12=>12, 13=>15];
-        foreach ($widths as $col => $width) {
-            $sheet->getColumnDimensionByColumn($col)->setWidth($width);
-        }
-
-        $filename = 'orders_export_' . now()->format('Ymd_His') . '.xlsx';
-        $writer   = new Xlsx($spreadsheet);
-        $tempFile = tempnam(sys_get_temp_dir(), 'export_');
-        $writer->save($tempFile);
-
-        return response()->download($tempFile, $filename, [
-            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        ])->deleteFileAfterSend(true);
-    }
+    return User::factory()->create(['role' => 'staff']);
 }
+
+function makeAdmin(): User
+{
+    return User::factory()->create(['role' => 'admin']);
+}
+
+function makeCustomer(): Customer
+{
+    return Customer::factory()->create();
+}
+
+function makeProduct(int $quantity = 10): Product
+{
+    return Product::factory()->create(['quantity' => $quantity, 'price' => 50000]);
+}
+
+function orderPayload(Customer $customer, array $items = []): array
+{
+    return [
+        'customer_mode'       => 'existing',
+        'customer_id'         => $customer->id,
+        'order_date'          => '2026-01-01',
+        'status'              => 'bought',
+        'discount'            => 0,
+        'weight'              => 0,
+        'shipping_fee_per_kg' => 0,
+        'down_payment'        => 0,
+        'courier'             => null,
+        'notes'               => null,
+        'items'               => $items ?: [[
+            'product_id'   => null,
+            'product_name' => 'Test Item',
+            'color'        => 'RED',
+            'size'         => 'M',
+            'quantity'     => 1,
+            'price'        => 100000,
+        ]],
+    ];
+}
+
+// ─── Authentication ────────────────────────────────────────────────────────────
+
+test('guests are redirected to login when visiting orders', function () {
+    $this->get(route('orders.index'))->assertRedirect(route('login'));
+});
+
+// ─── Index ────────────────────────────────────────────────────────────────────
+
+test('authenticated users can view the orders list', function () {
+    $this->actingAs(makeStaff())
+        ->get(route('orders.index'))
+        ->assertOk();
+});
+
+// ─── Create / Store ───────────────────────────────────────────────────────────
+
+test('staff can create an order with a manual item', function () {
+    $customer = makeCustomer();
+
+    $this->actingAs(makeStaff())
+        ->post(route('orders.store'), orderPayload($customer))
+        ->assertRedirect(route('orders.index'));
+
+    expect(Order::count())->toBe(1);
+    expect(Order::first()->total_price)->toBe(100000.0);
+});
+
+test('creating an order records the correct user_id', function () {
+    $staff    = makeStaff();
+    $customer = makeCustomer();
+
+    $this->actingAs($staff)
+        ->post(route('orders.store'), orderPayload($customer));
+
+    expect(Order::first()->user_id)->toBe($staff->id);
+});
+
+test('order total is calculated correctly from items and discount', function () {
+    $customer = makeCustomer();
+    $payload  = orderPayload($customer, [[
+        'product_id'   => null,
+        'product_name' => 'Shirt',
+        'color'        => 'BLUE',
+        'size'         => 'L',
+        'quantity'     => 2,
+        'price'        => 150000,
+    ]]);
+    $payload['discount'] = 50000;
+
+    $this->actingAs(makeStaff())
+        ->post(route('orders.store'), $payload);
+
+    // total = (2 × 150000) − 50000 = 250000
+    expect(Order::first()->total_price)->toBe(250000.0);
+});
+
+test('down payment is capped at total price', function () {
+    $customer = makeCustomer();
+    $payload  = orderPayload($customer);
+    $payload['down_payment'] = 9999999; // larger than total
+
+    $this->actingAs(makeStaff())
+        ->post(route('orders.store'), $payload);
+
+    $order = Order::first();
+    expect($order->down_payment)->toBe($order->total_price);
+    expect($order->remaining_payment)->toBe(0.0);
+});
+
+// ─── Stock management ─────────────────────────────────────────────────────────
+
+test('creating an order with a linked product decrements its stock', function () {
+    $product  = makeProduct(10);
+    $customer = makeCustomer();
+    $payload  = orderPayload($customer, [[
+        'product_id'   => $product->id,
+        'product_name' => $product->name,
+        'color'        => null,
+        'size'         => null,
+        'quantity'     => 3,
+        'price'        => $product->price,
+    ]]);
+
+    $this->actingAs(makeStaff())
+        ->post(route('orders.store'), $payload);
+
+    expect($product->fresh()->quantity)->toBe(7);
+});
+
+test('order is rejected when product stock is insufficient', function () {
+    $product  = makeProduct(2); // only 2 in stock
+    $customer = makeCustomer();
+    $payload  = orderPayload($customer, [[
+        'product_id'   => $product->id,
+        'product_name' => $product->name,
+        'color'        => null,
+        'size'         => null,
+        'quantity'     => 5, // requesting 5
+        'price'        => $product->price,
+    ]]);
+
+    $this->actingAs(makeStaff())
+        ->post(route('orders.store'), $payload)
+        ->assertSessionHasErrors('items.0.quantity');
+
+    expect(Order::count())->toBe(0);
+    expect($product->fresh()->quantity)->toBe(2); // stock unchanged
+});
+
+test('deleting an order restores product stock', function () {
+    $product  = makeProduct(10);
+    $customer = makeCustomer();
+    $payload  = orderPayload($customer, [[
+        'product_id'   => $product->id,
+        'product_name' => $product->name,
+        'color'        => null,
+        'size'         => null,
+        'quantity'     => 4,
+        'price'        => $product->price,
+    ]]);
+
+    $staff = makeStaff();
+    $this->actingAs($staff)->post(route('orders.store'), $payload);
+    expect($product->fresh()->quantity)->toBe(6);
+
+    $order = Order::first();
+    $this->actingAs($staff)->delete(route('orders.destroy', $order));
+    expect($product->fresh()->quantity)->toBe(10); // fully restored
+});
+
+// ─── Authorization ────────────────────────────────────────────────────────────
+
+test('staff cannot edit an order created by another user', function () {
+    $owner    = makeStaff();
+    $intruder = makeStaff();
+    $customer = makeCustomer();
+
+    $this->actingAs($owner)->post(route('orders.store'), orderPayload($customer));
+    $order = Order::first();
+
+    $this->actingAs($intruder)
+        ->get(route('orders.edit', $order))
+        ->assertForbidden();
+});
+
+test('staff cannot delete an order created by another user', function () {
+    $owner    = makeStaff();
+    $intruder = makeStaff();
+    $customer = makeCustomer();
+
+    $this->actingAs($owner)->post(route('orders.store'), orderPayload($customer));
+    $order = Order::first();
+
+    $this->actingAs($intruder)
+        ->delete(route('orders.destroy', $order))
+        ->assertForbidden();
+
+    expect(Order::count())->toBe(1); // order still exists
+});
+
+test('admin can edit any order regardless of who created it', function () {
+    $staff    = makeStaff();
+    $admin    = makeAdmin();
+    $customer = makeCustomer();
+
+    $this->actingAs($staff)->post(route('orders.store'), orderPayload($customer));
+    $order = Order::first();
+
+    $this->actingAs($admin)
+        ->get(route('orders.edit', $order))
+        ->assertOk();
+});
+
+test('admin can delete any order', function () {
+    $staff    = makeStaff();
+    $admin    = makeAdmin();
+    $customer = makeCustomer();
+
+    $this->actingAs($staff)->post(route('orders.store'), orderPayload($customer));
+    $order = Order::first();
+
+    $this->actingAs($admin)
+        ->delete(route('orders.destroy', $order))
+        ->assertRedirect(route('orders.index'));
+
+    expect(Order::count())->toBe(0);
+});
+
+// ─── Customer bulk delete ─────────────────────────────────────────────────────
+
+test('staff cannot use bulk delete all customers', function () {
+    makeCustomer();
+    makeCustomer();
+
+    $this->actingAs(makeStaff())
+        ->delete(route('customers.bulk-delete'), ['all' => true])
+        ->assertForbidden();
+
+    expect(Customer::count())->toBe(2); // untouched
+});
+
+test('admin can bulk delete all customers', function () {
+    makeCustomer();
+    makeCustomer();
+
+    $this->actingAs(makeAdmin())
+        ->delete(route('customers.bulk-delete'), ['all' => true])
+        ->assertRedirect(route('customers.index'));
+
+    expect(Customer::count())->toBe(0);
+});
+
+// ─── Customer delete guard ────────────────────────────────────────────────────
+
+test('cannot delete a customer who has existing orders', function () {
+    $staff    = makeStaff();
+    $customer = makeCustomer();
+
+    $this->actingAs($staff)->post(route('orders.store'), orderPayload($customer));
+    expect(Order::count())->toBe(1);
+
+    $this->actingAs($staff)
+        ->delete(route('customers.destroy', $customer))
+        ->assertRedirect(route('customers.index'))
+        ->assertSessionHas('error');
+
+    expect(Customer::count())->toBe(1); // still there
+});
+
+test('can delete a customer with no orders', function () {
+    $customer = makeCustomer();
+
+    $this->actingAs(makeStaff())
+        ->delete(route('customers.destroy', $customer))
+        ->assertRedirect(route('customers.index'));
+
+    expect(Customer::count())->toBe(0);
+});
