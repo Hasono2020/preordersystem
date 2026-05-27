@@ -49,7 +49,7 @@ class OrderController extends Controller
 
     public function create()
     {
-        $customers = Customer::with('area')->orderBy('name')->get(['id', 'name', 'phone', 'area_id']);
+        $customers = Customer::with('area')->orderBy('name')->get(['id', 'name', 'phone', 'area_id', 'type']);
         $areas     = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
         return Inertia::render('orders/create', compact('customers', 'areas'));
     }
@@ -62,6 +62,7 @@ class OrderController extends Controller
                 'new_customer_phone'   => 'nullable|string|max:50',
                 'new_customer_address' => 'nullable|string',
                 'new_customer_area_id' => 'nullable|exists:shipping_areas,id',
+                'new_customer_type'    => 'nullable|in:normal,reseller',
             ]);
         } else {
             $request->validate(['customer_id' => 'required|exists:customers,id']);
@@ -119,6 +120,7 @@ class OrderController extends Controller
                     'phone'   => $request->input('new_customer_phone'),
                     'address' => $request->input('new_customer_address'),
                     'area_id' => $request->input('new_customer_area_id') ?: null,
+                    'type'    => $request->input('new_customer_type', 'normal'),
                 ]);
                 $customerId = $customer->id;
             } else {
@@ -175,7 +177,7 @@ class OrderController extends Controller
         $this->authorizeOrder($order);
 
         $order->load(['items', 'customer']);
-        $customers = Customer::with('area')->orderBy('name')->get(['id', 'name', 'phone', 'area_id']);
+        $customers = Customer::with('area')->orderBy('name')->get(['id', 'name', 'phone', 'area_id', 'type']);
         $areas     = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
         return Inertia::render('orders/edit', compact('order', 'customers', 'areas'));
     }

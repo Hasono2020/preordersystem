@@ -29,6 +29,7 @@ class CustomerController extends Controller
             'phone'   => 'nullable|string|max:50',
             'address' => 'nullable|string',
             'area_id' => 'nullable|exists:shipping_areas,id',
+            'type'    => 'required|in:normal,reseller',
         ]);
 
         Customer::create($validated);
@@ -50,6 +51,7 @@ class CustomerController extends Controller
             'phone'   => 'nullable|string|max:50',
             'address' => 'nullable|string',
             'area_id' => 'nullable|exists:shipping_areas,id',
+            'type'    => 'required|in:normal,reseller',
         ]);
 
         $customer->update($validated);

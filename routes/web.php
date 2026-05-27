@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ShippingAreaController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ImportExportController;
+use App\Http\Controllers\PromoRuleController;
 
 Route::inertia('/', 'welcome')->name('home');
 
@@ -38,6 +39,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Users — admin only
     Route::resource('users', UserController::class)
+        ->except(['show'])
+        ->middleware('admin');
+
+    // Promo Rules — admin only
+    Route::get('promo-rules/api', [PromoRuleController::class, 'api'])->name('promo-rules.api');
+    Route::resource('promo-rules', PromoRuleController::class)
         ->except(['show'])
         ->middleware('admin');
 

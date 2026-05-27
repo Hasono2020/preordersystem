@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 
 export default function CustomerCreate({ areas }: any) {
     const { data, setData, post, processing, errors } = useForm({
-        name: '', phone: '', address: '', area_id: '',
+        name: '', phone: '', address: '', area_id: '', type: 'normal',
     });
 
     function submit(e: React.FormEvent) {
@@ -56,6 +56,15 @@ export default function CustomerCreate({ areas }: any) {
                             ))}
                         </select>
                         {errors.area_id && <p className="text-xs text-destructive">{errors.area_id}</p>}
+                    </div>
+                    <div className="space-y-1">
+                        <Label>Customer Type *</Label>
+                        <select className="w-full rounded-md border px-3 py-2 text-sm bg-background"
+                            value={data.type} onChange={e => setData('type', e.target.value)}>
+                            <option value="normal">Normal Customer</option>
+                            <option value="reseller">Reseller</option>
+                        </select>
+                        {errors.type && <p className="text-xs text-destructive">{errors.type}</p>}
                     </div>
                     <Button type="submit" disabled={processing}>Save Customer</Button>
                 </form>

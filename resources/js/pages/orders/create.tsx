@@ -9,8 +9,7 @@ const emptyItem = { product_id: null, product_name: '', color: '', size: '', qua
 
 function calcKg(totalGrams: number): number {
     if (totalGrams <= 0) return 0;
-    // 1-1999g = 1kg, 2000-2999g = 2kg, 3000-3999g = 3kg, etc.
-    return Math.floor(totalGrams / 1000) || 1;
+    return Math.ceil((totalGrams - 200) / 1000) || 1;
 }
 
 // Prevent scroll wheel from changing number inputs
@@ -30,6 +29,7 @@ export default function OrderCreate({ customers, areas }: any) {
         new_customer_phone:   '',
         new_customer_address: '',
         new_customer_area_id: '',
+        new_customer_type:    'normal',
         order_date:           new Date().toISOString().slice(0, 10),
         status:               'bought',
         discount:             0,
@@ -44,6 +44,8 @@ export default function OrderCreate({ customers, areas }: any) {
     });
 
     const [productSearch, setProductSearch]       = useState<Record<number, string>>({});
+    const [promoRules, setPromoRules]             = useState<any[]>([]);
+    const [activePromo, setActivePromo]           = useState<any>(null);
     const [productResults, setProductResults]     = useState<Record<number, any[]>>({});
     const [selectedProducts, setSelectedProducts] = useState<Record<number, any>>({});
 
@@ -94,6 +96,14 @@ export default function OrderCreate({ customers, areas }: any) {
         }
     }, [data.new_customer_area_id, customerMode]);
 
+    // Fetch active promo rules from API on mount
+    useEffect(() => {
+        fetch('/promo-rules/api')
+            .then(r => r.json())
+            .then(setPromoRules)
+            .catch(() => {});
+    }, []);
+
     // Auto-calculate weight
     useEffect(() => {
         const totalGrams = data.items.reduce((sum: number, item: any, i: number) => {
@@ -108,6 +118,41 @@ export default function OrderCreate({ customers, areas }: any) {
         const total = Number(data.weight) * Number(data.shipping_fee_per_kg);
         setData('total_shipping_fee', total);
     }, [data.weight, data.shipping_fee_per_kg]);
+
+    // Auto-apply promo discount based on customer type + total items
+    useEffect(() => {
+        if (promoRules.length === 0) return;
+
+        const custType = customerMode === 'existing'
+            ? (selectedCustomer?.type ?? 'normal')
+            : data.new_customer_type;
+
+        const totalQty = data.items.reduce((sum: number, i: any) => sum + Number(i.quantity), 0);
+
+        // Find rules that match: customer_type is 'all' or matches custType, and min_items is met
+        const matching = promoRules
+            .filter(r => (r.customer_type === 'all' || r.customer_type === custType) && totalQty >= r.min_items)
+            .sort((a, b) => b.min_items - a.min_items); // highest min_items first
+
+        // Reseller-specific rules take priority over 'all' rules
+        const resellerMatch = matching.find(r => r.customer_type === 'reseller');
+        const best = resellerMatch ?? matching[0] ?? null;
+
+        setActivePromo(best);
+
+        if (!best) {
+            setData(prev => ({ ...prev, discount: 0 }));
+            return;
+        }
+
+        const shippingFee     = Number(data.weight) * Number(data.shipping_fee_per_kg);
+        const freeShip        = Math.min(shippingFee, best.free_shipping_max);
+        const discountFlat    = best.discount_flat;
+        const discountPerItem = best.discount_per_item * totalQty;
+        const totalDiscount   = discountFlat + discountPerItem + freeShip;
+
+        setData(prev => ({ ...prev, discount: totalDiscount }));
+    }, [data.items, data.total_shipping_fee, data.customer_id, data.new_customer_type, customerMode, promoRules]);
 
     async function searchProduct(i: number, query: string) {
         setProductSearch(prev => ({ ...prev, [i]: query }));
@@ -318,6 +363,15 @@ export default function OrderCreate({ customers, areas }: any) {
                                         onChange={e => setData('new_customer_address', e.target.value)}
                                         placeholder="Customer address"
                                     />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label>Customer Type</Label>
+                                    <select className="w-full rounded-md border px-3 py-2 text-sm bg-background"
+                                        value={data.new_customer_type}
+                                        onChange={e => setData('new_customer_type', e.target.value)}>
+                                        <option value="normal">Normal Customer</option>
+                                        <option value="reseller">Reseller</option>
+                                    </select>
                                 </div>
                             </div>
                         )}
@@ -548,6 +602,20 @@ export default function OrderCreate({ customers, areas }: any) {
                             <span className="text-muted-foreground">Items subtotal</span>
                             <span>{itemsTotal.toLocaleString()}</span>
                         </div>
+                        {activePromo && (
+                            <div className="text-xs bg-green-50 text-green-700 border border-green-200 rounded px-3 py-2 space-y-0.5">
+                                <p className="font-semibold">🎉 Promo: {activePromo.label}</p>
+                                {activePromo.discount_flat > 0 && (
+                                    <p>• Discount: Rp{Number(activePromo.discount_flat).toLocaleString()}</p>
+                                )}
+                                {activePromo.discount_per_item > 0 && (
+                                    <p>• Per-item: Rp{Number(activePromo.discount_per_item).toLocaleString()} × {data.items.reduce((s: number, i: any) => s + Number(i.quantity), 0)} items</p>
+                                )}
+                                {activePromo.free_shipping_max > 0 && (
+                                    <p>• Free shipping up to Rp{Number(activePromo.free_shipping_max).toLocaleString()}</p>
+                                )}
+                            </div>
+                        )}
                         <div className="flex justify-between">
                             <span className="text-muted-foreground">Discount</span>
                             <span>- {Number(data.discount).toLocaleString()}</span>

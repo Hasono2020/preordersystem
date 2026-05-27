@@ -3,7 +3,7 @@ import { NavUser } from '@/components/nav-user';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { type NavItem } from '@/types';
 import { Link, usePage } from '@inertiajs/react';
-import { LayoutGrid, ShoppingCart, BarChart2, UserCog, MapPin, Package, Upload } from 'lucide-react';
+import { LayoutGrid, ShoppingCart, BarChart2, UserCog, MapPin, Package, Upload, Tag } from 'lucide-react';
 
 const getNavItems = (isAdmin: boolean): NavItem[] => {
     const items: NavItem[] = [
@@ -14,8 +14,9 @@ const getNavItems = (isAdmin: boolean): NavItem[] => {
         { title: 'Import / Export', href: '/import-export', icon: Upload },
     ];
     if (isAdmin) {
-        items.push({ title: 'Reports', href: '/reports', icon: BarChart2 });
-        items.push({ title: 'Users',   href: '/users',   icon: UserCog });
+        items.push({ title: 'Reports',     href: '/reports',     icon: BarChart2 });
+        items.push({ title: 'Users',       href: '/users',       icon: UserCog });
+        items.push({ title: 'Promo Rules', href: '/promo-rules', icon: Tag });
     }
     return items;
 };
