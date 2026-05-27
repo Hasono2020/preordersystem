@@ -11,8 +11,8 @@ class ProductController extends Controller
     public function index(Request $request)
     {
         $products = Product::when($request->search, fn($q) =>
-                $q->where('code', 'like', '%'.$request->search.'%')
-                  ->orWhere('name', 'like', '%'.$request->search.'%')
+                $q->where('code', 'like', '%' . $request->search . '%')
+                  ->orWhere('name', 'like', '%' . $request->search . '%')
             )
             ->latest()
             ->paginate(20)
@@ -96,16 +96,27 @@ class ProductController extends Controller
 
     public function destroy(Product $product)
     {
+        // FIX 2: Block deletion if this product appears in any order items
+        // rather than silently breaking links to historical order data.
+        if ($product->orderItems()->exists()) {
+            return redirect()->route('products.index')
+                ->with('error',
+                    "Cannot delete \"{$product->name}\" — it appears in existing orders. " .
+                    "You can set its quantity to 0 to hide it from new orders instead."
+                );
+        }
+
         $product->delete();
+
         return redirect()->route('products.index')
             ->with('success', 'Product deleted.');
     }
 
     public function search(Request $request)
     {
-        $products = Product::where(function($q) use ($request) {
-                $q->where('code', 'like', '%'.$request->q.'%')
-                ->orWhere('name', 'like', '%'.$request->q.'%');
+        $products = Product::where(function ($q) use ($request) {
+                $q->where('code', 'like', '%' . $request->q . '%')
+                  ->orWhere('name', 'like', '%' . $request->q . '%');
             })
             ->limit(10)
             ->get(['id', 'code', 'name', 'price', 'weight', 'quantity', 'colors', 'sizes']);

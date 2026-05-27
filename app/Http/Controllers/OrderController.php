@@ -13,7 +13,6 @@ use Inertia\Inertia;
 
 class OrderController extends Controller
 {
-    // BUG 4 FIX: Only the order's owner or an admin may mutate it.
     private function authorizeOrder(Order $order): void
     {
         /** @var \App\Models\User $user */
@@ -27,9 +26,17 @@ class OrderController extends Controller
     {
         $orders = Order::with(['customer', 'user', 'items'])
             ->when($request->status, fn($q) => $q->where('status', $request->status))
-            ->when($request->search, fn($q) => $q->whereHas('customer', fn($q2) =>
-                $q2->where('name', 'like', '%' . $request->search . '%')
-            ))
+            ->when($request->search, function ($q) use ($request) {
+                $search = '%' . $request->search . '%';
+                // FIX 5: Search across customer name, courier, and order date.
+                $q->where(function ($inner) use ($search) {
+                    $inner->whereHas('customer', fn($q2) =>
+                        $q2->where('name', 'like', $search)
+                    )
+                    ->orWhere('courier', 'like', $search)
+                    ->orWhere('order_date', 'like', $search);
+                });
+            })
             ->latest()
             ->paginate(20)
             ->withQueryString();
@@ -86,8 +93,6 @@ class OrderController extends Controller
         $downPayment = min($request->input('down_payment', 0), $totalPrice);
         $remaining   = $totalPrice - $downPayment;
 
-        // BUG 2 FIX: Pre-check stock for all items before writing anything.
-        // Returns validation errors with the exact product name and available qty.
         $stockErrors = DB::transaction(function () use ($items) {
             $errors = [];
             foreach ($items as $index => $item) {
@@ -107,9 +112,7 @@ class OrderController extends Controller
             return back()->withErrors($stockErrors)->withInput();
         }
 
-        $order = DB::transaction(function () use (
-            $request, $items, $totalPrice, $totalShipping, $downPayment, $remaining
-        ) {
+        DB::transaction(function () use ($request, $items, $totalPrice, $totalShipping, $downPayment, $remaining) {
             if ($request->input('customer_mode') === 'new') {
                 $customer = Customer::create([
                     'name'    => $request->input('new_customer_name'),
@@ -151,13 +154,10 @@ class OrderController extends Controller
                 ]);
 
                 if (!empty($item['product_id'])) {
-                    // Stock already verified above; decrement unconditionally.
                     Product::lockForUpdate()->find($item['product_id'])
                         ?->decrement('quantity', $item['quantity']);
                 }
             }
-
-            return $order;
         });
 
         return redirect()->route('orders.index')
@@ -172,7 +172,6 @@ class OrderController extends Controller
 
     public function edit(Order $order)
     {
-        // BUG 4 FIX: Only the owner or an admin may open the edit form.
         $this->authorizeOrder($order);
 
         $order->load(['items', 'customer']);
@@ -183,7 +182,6 @@ class OrderController extends Controller
 
     public function update(Request $request, Order $order)
     {
-        // BUG 4 FIX: Enforce ownership before applying any changes.
         $this->authorizeOrder($order);
 
         $request->validate([
@@ -213,8 +211,6 @@ class OrderController extends Controller
         $downPayment = min($request->input('down_payment', 0), $totalPrice);
         $remaining   = $totalPrice - $downPayment;
 
-        // BUG 2 FIX: Pre-check stock accounting for what will be restored from
-        // old items. Available = current stock + qty being returned from this order.
         $stockErrors = DB::transaction(function () use ($order, $items) {
             $order->load('items');
 
@@ -296,7 +292,6 @@ class OrderController extends Controller
 
     public function destroy(Order $order)
     {
-        // BUG 4 FIX: Only the owner or an admin may delete an order.
         $this->authorizeOrder($order);
 
         DB::transaction(function () use ($order) {

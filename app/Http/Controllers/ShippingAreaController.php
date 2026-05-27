@@ -4,13 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\ShippingArea;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ShippingAreaController extends Controller
@@ -59,7 +59,21 @@ class ShippingAreaController extends Controller
 
     public function destroy(ShippingArea $shippingArea)
     {
+        // FIX 3: Block deletion if any customers are assigned to this area.
+        // Without this, deleting an area leaves customers with a dangling
+        // area_id — either a FK crash on MySQL or silent orphan on SQLite.
+        if ($shippingArea->customers()->exists()) {
+            $count = $shippingArea->customers()->count();
+            return redirect()->route('shipping-areas.index')
+                ->with('error',
+                    "Cannot delete \"{$shippingArea->name}\" — " .
+                    "{$count} customer(s) are assigned to it. " .
+                    "Reassign those customers first."
+                );
+        }
+
         $shippingArea->delete();
+
         return redirect()->route('shipping-areas.index')
             ->with('success', 'Shipping area deleted.');
     }
@@ -75,7 +89,6 @@ class ShippingAreaController extends Controller
         $sheet = $spreadsheet->getActiveSheet() ?? $spreadsheet->createSheet();
         $sheet->setTitle('Shipping Areas');
 
-        // Row 1: Title
         $sheet->mergeCells('A1:B1');
         $sheet->getCell('A1')->setValue('SHIPPING AREAS');
         $sheet->getStyle('A1')->applyFromArray([
@@ -85,7 +98,6 @@ class ShippingAreaController extends Controller
         ]);
         $sheet->getRowDimension(1)->setRowHeight(25);
 
-        // Row 2: Headers
         $sheet->getCell('A2')->setValue('AREA NAME');
         $sheet->getCell('B2')->setValue('PRICE PER KG');
         $sheet->getStyle('A2:B2')->applyFromArray([
@@ -95,7 +107,6 @@ class ShippingAreaController extends Controller
             'borders'   => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
         ]);
 
-        // Data rows
         $row = 3;
         foreach ($areas as $area) {
             $sheet->getCell('A' . $row)->setValue($area->name);
@@ -109,7 +120,6 @@ class ShippingAreaController extends Controller
             $row++;
         }
 
-        // Column widths
         $sheet->getColumnDimension('A')->setWidth(30);
         $sheet->getColumnDimension('B')->setWidth(20);
 
@@ -133,7 +143,6 @@ class ShippingAreaController extends Controller
         $sheet = $spreadsheet->getActiveSheet() ?? $spreadsheet->createSheet();
         $sheet->setTitle('Shipping Areas');
 
-        // Row 1: Title
         $sheet->mergeCells('A1:B1');
         $sheet->getCell('A1')->setValue('SHIPPING AREAS');
         $sheet->getStyle('A1')->applyFromArray([
@@ -143,7 +152,6 @@ class ShippingAreaController extends Controller
         ]);
         $sheet->getRowDimension(1)->setRowHeight(25);
 
-        // Row 2: Headers
         $sheet->getCell('A2')->setValue('AREA NAME');
         $sheet->getCell('B2')->setValue('PRICE PER KG');
         $sheet->getStyle('A2:B2')->applyFromArray([
@@ -153,7 +161,6 @@ class ShippingAreaController extends Controller
             'borders'   => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
         ]);
 
-        // Sample rows
         $samples = [
             ['Jakarta Selatan', 15000],
             ['Surabaya',        12000],
@@ -173,7 +180,6 @@ class ShippingAreaController extends Controller
             $row++;
         }
 
-        // Column widths
         $sheet->getColumnDimension('A')->setWidth(30);
         $sheet->getColumnDimension('B')->setWidth(20);
 
@@ -198,60 +204,49 @@ class ShippingAreaController extends Controller
         $fullPath    = storage_path('app/private/' . $path);
         $spreadsheet = IOFactory::load($fullPath);
 
-        // Try 'Shipping Areas' sheet first, fall back to first sheet
         $sheetNames = $spreadsheet->getSheetNames();
         $sheetIndex = array_search('Shipping Areas', $sheetNames);
         $sheet      = $sheetIndex !== false
             ? $spreadsheet->getSheet((int) $sheetIndex)
             : $spreadsheet->getSheet(0);
 
-        $rows      = $sheet->toArray(null, true, true, false);
-        $imported  = 0;
-        $updated   = 0;
-        $skipped   = 0;
+        $rows     = $sheet->toArray(null, true, true, false);
+        $imported = 0;
+        $updated  = 0;
+        $skipped  = 0;
 
         foreach ($rows as $i => $row) {
-            if ($i <= 1) continue; // Skip title + header rows
+            if ($i <= 1) continue;
 
-            $row  = array_values($row);
-            $name = trim((string)($row[0] ?? ''));
+            $row   = array_values($row);
+            $name  = trim((string)($row[0] ?? ''));
             $price = $row[1] ?? null;
 
-            // Skip empty rows
             if ($name === '') continue;
 
-            // Skip if price is not numeric
             if (!is_numeric($price)) {
                 $skipped++;
                 continue;
             }
 
-            $price = (float) $price;
-
-            // Update if exists, create if not
             $existing = ShippingArea::whereRaw('LOWER(name) = ?', [strtolower($name)])->first();
 
             if ($existing) {
-                $existing->update(['price_per_kg' => $price]);
+                $existing->update(['price_per_kg' => (float) $price]);
                 $updated++;
             } else {
-                ShippingArea::create([
-                    'name'         => $name,
-                    'price_per_kg' => $price,
-                ]);
+                ShippingArea::create(['name' => $name, 'price_per_kg' => (float) $price]);
                 $imported++;
             }
         }
 
-        // Clean up uploaded file
-        \Illuminate\Support\Facades\Storage::delete($path);
+        Storage::delete($path);
 
         $message = "Import complete! {$imported} areas added, {$updated} updated.";
         if ($skipped > 0) {
             $message .= " {$skipped} rows skipped (invalid data).";
         }
 
-        return redirect()->route('shipping-areas.index')
-            ->with('success', $message);
+        return redirect()->route('shipping-areas.index')->with('success', $message);
     }
 }

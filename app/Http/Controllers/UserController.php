@@ -11,7 +11,8 @@ class UserController extends Controller
 {
     public function index()
     {
-        $users = User::latest()->get(['id', 'name', 'email', 'role', 'created_at']);
+        // FIX 4: paginate() instead of get() so the list doesn't grow unbounded.
+        $users = User::latest()->paginate(20);
         return Inertia::render('users/index', compact('users'));
     }
 
@@ -68,11 +69,25 @@ class UserController extends Controller
 
     public function destroy(User $user)
     {
-        if ($user->id === auth()->id()) {
+        /** @var \App\Models\User $authUser */
+        $authUser = auth()->user();
+
+        if ($user->id === $authUser->id) {
             return back()->with('error', 'You cannot delete your own account.');
         }
 
+        // FIX 1: Block deletion if this user has recorded orders.
+        // The orders table cascades on user_id, so deleting the user
+        // would silently wipe every order they ever created.
+        if ($user->orders()->exists()) {
+            return back()->with('error',
+                "Cannot delete \"{$user->name}\" — they have recorded orders. " .
+                "Reassign or delete their orders first."
+            );
+        }
+
         $user->delete();
+
         return redirect()->route('users.index')
             ->with('success', 'User deleted.');
     }

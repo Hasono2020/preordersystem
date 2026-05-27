@@ -48,7 +48,8 @@ export default function UsersIndex({ users }: any) {
                             </tr>
                         </thead>
                         <tbody>
-                            {users.map((u: any, idx: number) => (
+                            {/* FIX 4: users is now paginated so we use users.data */}
+                            {users.data.map((u: any, idx: number) => (
                                 <tr key={u.id}
                                     className={`border-b last:border-0 hover:bg-muted/30 transition-colors ${idx % 2 === 0 ? '' : 'bg-muted/10'}`}>
                                     <td className="px-6 py-3.5 font-medium">{u.name}</td>
@@ -77,7 +78,7 @@ export default function UsersIndex({ users }: any) {
                                     </td>
                                 </tr>
                             ))}
-                            {users.length === 0 && (
+                            {users.data.length === 0 && (
                                 <tr>
                                     <td colSpan={5} className="px-6 py-12 text-center text-muted-foreground">
                                         No users yet.
@@ -87,6 +88,18 @@ export default function UsersIndex({ users }: any) {
                         </tbody>
                     </table>
                 </div>
+
+                {/* Pagination — only shown when there's more than one page */}
+                {users.links.length > 3 && (
+                    <div className="flex gap-2 justify-end text-sm">
+                        {users.links.map((link: any, i: number) => (
+                            <Link key={i} href={link.url ?? '#'}
+                                className={`px-3 py-1 rounded border ${link.active ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'} ${!link.url ? 'opacity-40 pointer-events-none' : ''}`}
+                                dangerouslySetInnerHTML={{ __html: link.label }}
+                            />
+                        ))}
+                    </div>
+                )}
             </div>
         </>
     );

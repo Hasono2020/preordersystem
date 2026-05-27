@@ -12,11 +12,13 @@ class ReportController extends Controller
     public function index(Request $request)
     {
         $period = $request->period ?? 'monthly';
-        $year   = (int) ($request->year  ?? now()->year);
-        $month  = (int) ($request->month ?? now()->month);
+
+        // FIX 6: Clamp year to current year so users can't request reports
+        // for future years that return a confusing empty result.
+        $year  = min((int) ($request->year ?? now()->year), now()->year);
+        $month = (int) ($request->month ?? now()->month);
 
         if ($period === 'daily') {
-            // DATE() works on both SQLite and MySQL.
             $data = Order::whereYear('order_date', $year)
                 ->whereMonth('order_date', $month)
                 ->selectRaw('DATE(order_date) as label, COUNT(*) as total_orders, SUM(total_price - total_shipping_fee) as total_sales')
@@ -24,9 +26,6 @@ class ReportController extends Controller
                 ->orderBy('label')
                 ->get();
         } else {
-            // BUG 3 FIX: Detect the DB driver at runtime and use the correct
-            // month-extraction function. strftime('%m',...) is SQLite-only;
-            // MONTH() is the MySQL equivalent.
             $driver = DB::getDriverName();
 
             $monthExpr = $driver === 'sqlite'
