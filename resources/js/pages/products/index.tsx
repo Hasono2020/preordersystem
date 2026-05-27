@@ -35,6 +35,11 @@ export default function ProductsIndex({ products, filters }: any) {
                         {flash.success}
                     </div>
                 )}
+                {flash?.error && (
+                    <div className="rounded-md bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-800">
+                        {flash.error}
+                    </div>
+                )}
 
                 <form onSubmit={search} className="flex gap-2">
                     <Input
@@ -59,6 +64,7 @@ export default function ProductsIndex({ products, filters }: any) {
                                 <th className="text-right px-6 py-3">Stock</th>
                                 <th className="text-left px-6 py-3">Colors</th>
                                 <th className="text-left px-6 py-3">Sizes</th>
+                                <th className="text-left px-6 py-3">Promo</th>
                                 <th className="px-6 py-3"></th>
                             </tr>
                         </thead>
@@ -102,6 +108,17 @@ export default function ProductsIndex({ products, filters }: any) {
                                             ))}
                                         </div>
                                     </td>
+                                    <td className="px-6 py-3.5">
+                                        {p.exclude_from_promo ? (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                                                Excluded
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                                Eligible
+                                            </span>
+                                        )}
+                                    </td>
                                     <td className="px-6 py-3.5 flex gap-2 justify-end">
                                         <Link href={`/products/${p.id}/edit`}>
                                             <Button variant="ghost" size="icon"><Pencil className="size-4" /></Button>
@@ -114,7 +131,7 @@ export default function ProductsIndex({ products, filters }: any) {
                             ))}
                             {products.data.length === 0 && (
                                 <tr>
-                                    <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
+                                    <td colSpan={9} className="px-6 py-12 text-center text-muted-foreground">
                                         No products yet. <Link href="/products/create" className="text-primary hover:underline">Add one →</Link>
                                     </td>
                                 </tr>
@@ -123,7 +140,6 @@ export default function ProductsIndex({ products, filters }: any) {
                     </table>
                 </div>
 
-                {/* Pagination */}
                 <div className="flex gap-2 justify-end text-sm">
                     {products.links.map((link: any, i: number) => (
                         <Link key={i} href={link.url ?? '#'}

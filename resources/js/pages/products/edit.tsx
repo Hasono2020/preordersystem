@@ -5,19 +5,22 @@ import { Label } from '@/components/ui/label';
 
 export default function ProductEdit({ product }: any) {
     const { data, setData, patch, processing, errors } = useForm({
-        code:     product.code,
-        name:     product.name,
-        price:    String(product.price),
-        weight:   String(product.weight),
-        quantity: String(product.quantity ?? 0),
-        colors:   (product.colors ?? []).join(', '),
-        sizes:    (product.sizes ?? []).join(', '),
+        code:               product.code,
+        name:               product.name,
+        price:              String(product.price),
+        weight:             String(product.weight),
+        quantity:           String(product.quantity ?? 0),
+        colors:             (product.colors ?? []).join(', '),
+        sizes:              (product.sizes ?? []).join(', '),
+        exclude_from_promo: product.exclude_from_promo ?? false,
     });
 
     function submit(e: React.FormEvent) {
         e.preventDefault();
         patch(`/products/${product.id}`);
     }
+
+    const codeEndsWithZ = data.code.trim().toUpperCase().endsWith('Z');
 
     return (
         <>
@@ -56,16 +59,53 @@ export default function ProductEdit({ product }: any) {
                             {errors.quantity && <p className="text-xs text-destructive">{errors.quantity}</p>}
                         </div>
                     </div>
+
                     <div className="space-y-1">
                         <Label>Colors <span className="text-muted-foreground text-xs">(comma separated)</span></Label>
                         <Input value={data.colors} onChange={e => setData('colors', e.target.value)} />
                         <p className="text-xs text-muted-foreground">Separate each color with a comma</p>
                     </div>
+
                     <div className="space-y-1">
                         <Label>Sizes <span className="text-muted-foreground text-xs">(comma separated)</span></Label>
                         <Input value={data.sizes} onChange={e => setData('sizes', e.target.value)} />
                         <p className="text-xs text-muted-foreground">Separate each size with a comma</p>
                     </div>
+
+                    {/* Promo exclusion toggle */}
+                    <div className={`rounded-lg border p-4 space-y-1 transition-colors ${
+                        data.exclude_from_promo
+                            ? 'border-orange-300 bg-orange-50'
+                            : 'border-border bg-muted/30'
+                    }`}>
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <Label className="text-sm font-medium">Exclude from Promo</Label>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                    This product will not receive any discount or shipping fee reduction from promo rules.
+                                    {codeEndsWithZ && (
+                                        <span className="ml-1 text-orange-600 font-medium">
+                                            Code ends with Z — typically excluded.
+                                        </span>
+                                    )}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                role="switch"
+                                aria-checked={data.exclude_from_promo}
+                                onClick={() => setData('exclude_from_promo', !data.exclude_from_promo)}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2 ${
+                                    data.exclude_from_promo ? 'bg-orange-500' : 'bg-muted-foreground/30'
+                                }`}
+                            >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                                    data.exclude_from_promo ? 'translate-x-6' : 'translate-x-1'
+                                }`} />
+                            </button>
+                        </div>
+                    </div>
+
                     <Button type="submit" disabled={processing}>Update Product</Button>
                 </form>
             </div>

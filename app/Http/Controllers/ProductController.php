@@ -32,27 +32,36 @@ class ProductController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'code'     => 'required|string|max:50|unique:products,code',
-            'name'     => 'required|string|max:255',
-            'price'    => 'required|numeric|min:0',
-            'weight'   => 'required|numeric|min:0',
-            'quantity' => 'required|integer|min:0',
-            'colors'   => 'nullable|string',
-            'sizes'    => 'nullable|string',
+            'code'               => 'required|string|max:50|unique:products,code',
+            'name'               => 'required|string|max:255',
+            'price'              => 'required|numeric|min:0',
+            'weight'             => 'required|numeric|min:0',
+            'quantity'           => 'required|integer|min:0',
+            'colors'             => 'nullable|string',
+            'sizes'              => 'nullable|string',
+            'exclude_from_promo' => 'boolean',
         ]);
 
+        $code = strtoupper(trim($validated['code']));
+
+        // Auto-enable exclude_from_promo when code ends with Z,
+        // but also respect a manual override from the form.
+        $excludeFromPromo = $validated['exclude_from_promo']
+            ?? str_ends_with($code, 'Z');
+
         Product::create([
-            'code'     => strtoupper(trim($validated['code'])),
-            'name'     => $validated['name'],
-            'price'    => $validated['price'],
-            'weight'   => $validated['weight'],
-            'quantity' => $validated['quantity'],
-            'colors'   => $validated['colors']
+            'code'               => $code,
+            'name'               => $validated['name'],
+            'price'              => $validated['price'],
+            'weight'             => $validated['weight'],
+            'quantity'           => $validated['quantity'],
+            'colors'             => $validated['colors']
                 ? array_filter(array_map('trim', explode(',', strtoupper($validated['colors']))))
                 : [],
-            'sizes'    => $validated['sizes']
+            'sizes'              => $validated['sizes']
                 ? array_filter(array_map('trim', explode(',', strtoupper($validated['sizes']))))
                 : [],
+            'exclude_from_promo' => $excludeFromPromo,
         ]);
 
         return redirect()->route('products.index')
@@ -67,27 +76,31 @@ class ProductController extends Controller
     public function update(Request $request, Product $product)
     {
         $validated = $request->validate([
-            'code'     => 'required|string|max:50|unique:products,code,' . $product->id,
-            'name'     => 'required|string|max:255',
-            'price'    => 'required|numeric|min:0',
-            'weight'   => 'required|numeric|min:0',
-            'quantity' => 'required|integer|min:0',
-            'colors'   => 'nullable|string',
-            'sizes'    => 'nullable|string',
+            'code'               => 'required|string|max:50|unique:products,code,' . $product->id,
+            'name'               => 'required|string|max:255',
+            'price'              => 'required|numeric|min:0',
+            'weight'             => 'required|numeric|min:0',
+            'quantity'           => 'required|integer|min:0',
+            'colors'             => 'nullable|string',
+            'sizes'              => 'nullable|string',
+            'exclude_from_promo' => 'boolean',
         ]);
 
+        $code = strtoupper(trim($validated['code']));
+
         $product->update([
-            'code'     => strtoupper(trim($validated['code'])),
-            'name'     => $validated['name'],
-            'price'    => $validated['price'],
-            'weight'   => $validated['weight'],
-            'quantity' => $validated['quantity'],
-            'colors'   => $validated['colors']
+            'code'               => $code,
+            'name'               => $validated['name'],
+            'price'              => $validated['price'],
+            'weight'             => $validated['weight'],
+            'quantity'           => $validated['quantity'],
+            'colors'             => $validated['colors']
                 ? array_filter(array_map('trim', explode(',', strtoupper($validated['colors']))))
                 : [],
-            'sizes'    => $validated['sizes']
+            'sizes'              => $validated['sizes']
                 ? array_filter(array_map('trim', explode(',', strtoupper($validated['sizes']))))
                 : [],
+            'exclude_from_promo' => $validated['exclude_from_promo'] ?? false,
         ]);
 
         return redirect()->route('products.index')
@@ -96,8 +109,6 @@ class ProductController extends Controller
 
     public function destroy(Product $product)
     {
-        // FIX 2: Block deletion if this product appears in any order items
-        // rather than silently breaking links to historical order data.
         if ($product->orderItems()->exists()) {
             return redirect()->route('products.index')
                 ->with('error',
@@ -119,7 +130,8 @@ class ProductController extends Controller
                   ->orWhere('name', 'like', '%' . $request->q . '%');
             })
             ->limit(10)
-            ->get(['id', 'code', 'name', 'price', 'weight', 'quantity', 'colors', 'sizes']);
+            ->get(['id', 'code', 'name', 'price', 'weight', 'quantity',
+                   'colors', 'sizes', 'exclude_from_promo']);
 
         return response()->json($products);
     }
