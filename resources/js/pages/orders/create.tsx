@@ -9,7 +9,8 @@ const emptyItem = { product_id: null, product_name: '', color: '', size: '', qua
 
 function calcKg(totalGrams: number): number {
     if (totalGrams <= 0) return 0;
-    return Math.ceil((totalGrams - 200) / 1000) || 1;
+    // 1-1999g = 1kg, 2000-2999g = 2kg, 3000-3999g = 3kg, etc.
+    return Math.floor(totalGrams / 1000) || 1;
 }
 
 // Prevent scroll wheel from changing number inputs
