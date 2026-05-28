@@ -35,8 +35,7 @@ class ImportExportController extends Controller
             'file' => 'required|file|mimes:xlsx,xls|max:20480',
         ]);
 
-        // FIX 3 Scenario C: Delete the previous upload before storing the
-        // new one, so re-uploading without finishing doesn't orphan the old file.
+        // Delete any leftover file from a previous upload session.
         $oldPath = session('import_path');
         if ($oldPath && Storage::exists($oldPath)) {
             Storage::delete($oldPath);
@@ -47,7 +46,7 @@ class ImportExportController extends Controller
         $spreadsheet = IOFactory::load($fullPath);
         $sheetNames  = $spreadsheet->getSheetNames();
 
-        // Accept sheet named 'Orders', fall back to first sheet
+        // Accept sheet named 'Orders', fall back to first sheet.
         $sheetIndex = array_search('Orders', $sheetNames);
         $sheet      = $sheetIndex !== false
             ? $spreadsheet->getSheet((int) $sheetIndex)
@@ -56,8 +55,7 @@ class ImportExportController extends Controller
         $rows    = $sheet->toArray(null, true, true, false);
         $preview = $this->parseRows($rows);
 
-        // FIX 3 Scenario B: If parsing yields nothing, delete the uploaded
-        // file immediately and return an error — don't leave it on disk.
+        // Clean up and bail if no valid rows found.
         if (empty($preview)) {
             Storage::delete($path);
             return back()->with('error', 'No valid data rows found in the uploaded file. Please check the format.');
@@ -73,15 +71,20 @@ class ImportExportController extends Controller
 
     private function parseRows(array $rows): array
     {
-        $parsed    = [];
-        $lastName  = '';
-        $lastPhone = '';
-        $lastArea  = '';
-        $lastDP    = 0;
-        $lastDate  = null;
-        $lastAn    = '';
-        $lastNotes = '';
-        $lastPrice = 0;
+        $parsed      = [];
+        $lastName    = '';
+        $lastPhone   = '';
+        $lastArea    = '';
+        $lastType    = 'normal';
+        $lastDP      = 0;
+        $lastDate    = null;
+        $lastAn      = '';
+        $lastNotes   = '';
+        $lastPrice   = 0;
+
+        // Column map (0-based):
+        // 0:No  1:Name  2:Phone  3:Area  4:Code  5:Color  6:Size
+        // 7:Price  8:DP  9:Date of DP  10:AN  11:Notes  12:Type
 
         foreach ($rows as $i => $row) {
             if ($i === 0) continue; // skip header row
@@ -94,8 +97,8 @@ class ImportExportController extends Controller
             $name = trim((string)($row[1] ?? ''));
             if ($name !== '') {
                 if ($name !== $lastName) {
-                    $lastDP   = 0;
-                    $lastDate = null;
+                    $lastDP    = 0;
+                    $lastDate  = null;
                     $lastPrice = 0;
                 }
                 $lastName  = $name;
@@ -103,6 +106,11 @@ class ImportExportController extends Controller
                 $lastArea  = trim((string)($row[3] ?? ''));
                 $lastAn    = trim((string)($row[10] ?? ''));
                 $lastNotes = trim((string)($row[11] ?? ''));
+
+                // FIX 1: Read customer type from column 12.
+                // Accepts 'reseller' (case-insensitive), anything else = normal.
+                $rawType   = strtolower(trim((string)($row[12] ?? '')));
+                $lastType  = $rawType === 'reseller' ? 'reseller' : 'normal';
             }
 
             if ($lastName === '') continue;
@@ -130,6 +138,7 @@ class ImportExportController extends Controller
                 'name'         => $lastName,
                 'phone'        => $lastPhone,
                 'area'         => $lastArea,
+                'type'         => $lastType,
                 'product_code' => $code,
                 'color'        => trim((string)($row[5] ?? '')),
                 'size'         => trim((string)($row[6] ?? '')),
@@ -150,8 +159,6 @@ class ImportExportController extends Controller
         $data       = session('import_data', []);
         $importPath = session('import_path');
 
-        // FIX 2: Clear message when session has expired, instead of the
-        // vague "No import data found" that confused users.
         if (empty($data)) {
             return redirect()->route('import-export.index')
                 ->with('error', 'Your import session has expired. Please upload the file again.');
@@ -175,18 +182,26 @@ class ImportExportController extends Controller
             foreach ($grouped as $key => $rows) {
                 $first = $rows[0];
                 try {
-                    // FIX 1: Use firstOrCreate keyed on name + phone so that
-                    // re-importing the same file finds the existing customer
-                    // instead of creating a duplicate.
                     $area = ShippingArea::whereRaw('LOWER(name) = ?', [
                         strtolower(trim($first['area']))
                     ])->first();
 
+                    // FIX 1: Preserve customer type on create.
+                    // firstOrCreate only sets type on NEW customers;
+                    // existing customers keep their current type unchanged.
                     $customer = Customer::firstOrCreate(
                         ['name' => $first['name'], 'phone' => $first['phone'] ?: null],
-                        ['area_id' => $area?->id, 'address' => null]
+                        [
+                            'area_id'    => $area?->id,
+                            'address'    => null,
+                            'type'       => $first['type'] ?? 'normal',
+                            'promo_type' => ($first['type'] ?? 'normal') === 'reseller'
+                                ? 'reseller_promo'
+                                : 'default',
+                        ]
                     );
 
+                    // Update area if missing on existing customer.
                     if ($area && !$customer->area_id) {
                         $customer->update(['area_id' => $area->id]);
                     }
@@ -208,7 +223,11 @@ class ImportExportController extends Controller
                         'user_id'             => Auth::id(),
                         'order_date'          => $orderDate,
                         'status'              => 'bought',
+                        // FIX 2: Set discount columns to 0 explicitly so the
+                        // schema doesn't reject missing nullable columns.
                         'discount'            => 0,
+                        'discount_product'    => 0,
+                        'discount_shipping'   => 0,
                         'shipping_fee'        => 0,
                         'shipping_fee_per_kg' => $area?->price_per_kg ?? 0,
                         'total_shipping_fee'  => 0,
@@ -243,8 +262,7 @@ class ImportExportController extends Controller
             }
         });
 
-        // FIX 3 Scenario A: Delete the uploaded file after import completes
-        // so files don't accumulate in storage/app/private/imports/.
+        // Delete the uploaded file after import completes.
         if ($importPath && Storage::exists($importPath)) {
             Storage::delete($importPath);
         }
@@ -276,11 +294,16 @@ class ImportExportController extends Controller
         $sheet = $spreadsheet->getActiveSheet() ?? $spreadsheet->createSheet();
         $sheet->setTitle('Orders');
 
-        $headers = ['No', 'Name', 'Phone', 'Area', 'Code', 'Color', 'Size', 'Price', 'DP', 'Date of DP', 'AN', 'Notes'];
+        // FIX 3 & 4: Added 'Type' and 'Discount' columns to the export so
+        // customer type and promo discount are preserved on re-import.
+        $headers = [
+            'No', 'Name', 'Phone', 'Area', 'Code', 'Color', 'Size',
+            'Price', 'DP', 'Date of DP', 'AN', 'Notes', 'Type', 'Discount',
+        ];
         foreach ($headers as $col => $header) {
             $sheet->getCell(Coordinate::stringFromColumnIndex($col + 1) . '1')->setValue($header);
         }
-        $sheet->getStyle('A1:L1')->applyFromArray([
+        $sheet->getStyle('A1:N1')->applyFromArray([
             'font'      => ['bold' => true],
             'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'BDD7EE']],
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
@@ -291,27 +314,28 @@ class ImportExportController extends Controller
         $rowNum = 2;
         $no     = 1;
 
-        // FIX 5: Use chunk() instead of get() so large datasets are processed
-        // 200 orders at a time instead of loading everything into memory at once.
         Order::with(['customer.area', 'items'])->latest()->chunk(200, function ($orders) use (&$sheet, &$rowNum, &$no) {
             foreach ($orders as $order) {
                 $itemsList  = $order->items->values()->all();
                 $totalItems = count($itemsList);
                 if ($totalItems === 0) continue;
 
-                $totalDP   = (float) $order->down_payment;
-                $orderDate = $order->order_date ? $order->order_date->format('Y-m-d') : '';
-                $custName  = $order->customer?->name  ?? '';
-                $custPhone = $order->customer?->phone ?? '';
-                $areaName  = $order->customer?->area?->name ?? '';
-                $notes     = $order->notes ?? '';
+                $totalDP    = (float) $order->down_payment;
+                $orderDate  = $order->order_date ? $order->order_date->format('Y-m-d') : '';
+                $custName   = $order->customer?->name   ?? '';
+                $custPhone  = $order->customer?->phone  ?? '';
+                $areaName   = $order->customer?->area?->name ?? '';
+                $custType   = $order->customer?->type   ?? 'normal';
+                $notes      = $order->notes ?? '';
+                // FIX 4: Export the total discount applied to this order.
+                $discount   = (float) $order->discount;
 
                 for ($i = 0; $i < $totalItems; $i++) {
                     $item    = $itemsList[$i];
                     $isFirst = ($i === 0);
 
                     $values = [
-                        1  => $isFirst ? $no : '',
+                        1  => $isFirst ? $no        : '',
                         2  => $isFirst ? $custName  : '',
                         3  => $isFirst ? $custPhone : '',
                         4  => $isFirst ? $areaName  : '',
@@ -323,13 +347,17 @@ class ImportExportController extends Controller
                         10 => $isFirst ? $orderDate : '',
                         11 => $isFirst ? $custName  : '',
                         12 => $isFirst ? $notes     : '',
+                        // FIX 3: Export customer type so it survives re-import.
+                        13 => $isFirst ? $custType  : '',
+                        // FIX 4: Export discount (informational — not re-imported).
+                        14 => ($isFirst && $discount > 0) ? $discount : '',
                     ];
 
                     foreach ($values as $col => $value) {
                         $sheet->getCell(Coordinate::stringFromColumnIndex($col) . $rowNum)->setValue($value);
                     }
 
-                    $sheet->getStyle("A{$rowNum}:L{$rowNum}")->applyFromArray([
+                    $sheet->getStyle("A{$rowNum}:N{$rowNum}")->applyFromArray([
                         'borders' => ['allBorders' => [
                             'borderStyle' => Border::BORDER_THIN,
                             'color'       => ['rgb' => 'D9D9D9'],
@@ -342,7 +370,10 @@ class ImportExportController extends Controller
             }
         });
 
-        $widths = [1=>6, 2=>20, 3=>15, 4=>18, 5=>12, 6=>12, 7=>8, 8=>15, 9=>15, 10=>14, 11=>15, 12=>20];
+        $widths = [
+            1=>6, 2=>20, 3=>15, 4=>18, 5=>12, 6=>12, 7=>8,
+            8=>15, 9=>15, 10=>14, 11=>15, 12=>20, 13=>12, 14=>15,
+        ];
         foreach ($widths as $col => $width) {
             $sheet->getColumnDimensionByColumn($col)->setWidth($width);
         }
@@ -366,11 +397,17 @@ class ImportExportController extends Controller
         $sheet = $spreadsheet->getActiveSheet() ?? $spreadsheet->createSheet();
         $sheet->setTitle('Orders');
 
-        $headers = ['No', 'Name', 'Phone', 'Area', 'Code', 'Color', 'Size', 'Price', 'DP', 'Date of DP', 'AN', 'Notes'];
+        // FIX 3: Added 'Type' column to template so users know it exists.
+        // FIX 5: Replaced NZ_01 (Z-suffix = excluded from promo) with
+        // NA_02 as the example to avoid confusing new users.
+        $headers = [
+            'No', 'Name', 'Phone', 'Area', 'Code', 'Color', 'Size',
+            'Price', 'DP', 'Date of DP', 'AN', 'Notes', 'Type',
+        ];
         foreach ($headers as $col => $header) {
             $sheet->getCell(Coordinate::stringFromColumnIndex($col + 1) . '1')->setValue($header);
         }
-        $sheet->getStyle('A1:L1')->applyFromArray([
+        $sheet->getStyle('A1:M1')->applyFromArray([
             'font'      => ['bold' => true],
             'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'BDD7EE']],
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
@@ -378,10 +415,12 @@ class ImportExportController extends Controller
         ]);
         $sheet->getRowDimension(1)->setRowHeight(20);
 
+        // FIX 5: Use NA_01 / NA_02 (no Z-suffix) as sample codes.
+        // FIX 3: Include 'normal' and 'reseller' in the Type column examples.
         $samples = [
-            [1, 'JASMINE 7911', '08123456789', 'Jakarta Selatan', 'NA_03', 'GREY',  'FZ', 169000, 500000, '2026-05-03', 'JASMINE', ''],
-            [2, 'JASMINE 7911', '08123456789', '',                'NA_03', 'BROWN', 'FZ', 169000, '',     '',           'JASMINE', ''],
-            [3, 'PHOENIX',      '08198765432', 'Surabaya',        'NZ_01', 'WHITE', 'FZ', 95000,  '',     '',           'PHOENIX', ''],
+            [1, 'JASMINE 7911', '08123456789', 'Jakarta Selatan', 'NA_01', 'GREY',  'FZ', 169000, 500000, '2026-05-03', 'JASMINE', '', 'normal'],
+            [2, 'JASMINE 7911', '08123456789', '',                'NA_02', 'BROWN', 'FZ', 169000, '',     '',           'JASMINE', '', ''],
+            [3, 'PHOENIX',      '08198765432', 'Surabaya',        'NA_01', 'WHITE', 'FZ', 95000,  '',     '',           'PHOENIX', '', 'reseller'],
         ];
 
         $rowNum = 2;
@@ -389,14 +428,25 @@ class ImportExportController extends Controller
             foreach ($sample as $col => $value) {
                 $sheet->getCell(Coordinate::stringFromColumnIndex($col + 1) . $rowNum)->setValue($value);
             }
-            $sheet->getStyle("A{$rowNum}:L{$rowNum}")->applyFromArray([
+            $sheet->getStyle("A{$rowNum}:M{$rowNum}")->applyFromArray([
                 'font'    => ['color' => ['rgb' => 'AAAAAA'], 'italic' => true],
                 'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'D9D9D9']]],
             ]);
             $rowNum++;
         }
 
-        $widths = [1=>6, 2=>20, 3=>15, 4=>18, 5=>12, 6=>12, 7=>8, 8=>15, 9=>15, 10=>14, 11=>15, 12=>20];
+        // Add a note row explaining the Type column.
+        $noteRow = $rowNum + 1;
+        $sheet->getCell('A' . $noteRow)->setValue('* Type column: leave blank or write "normal" for regular customers, write "reseller" for reseller customers.');
+        $sheet->getStyle('A' . $noteRow)->applyFromArray([
+            'font' => ['italic' => true, 'color' => ['rgb' => '888888'], 'size' => 9],
+        ]);
+        $sheet->mergeCells('A' . $noteRow . ':M' . $noteRow);
+
+        $widths = [
+            1=>6, 2=>20, 3=>15, 4=>18, 5=>12, 6=>12, 7=>8,
+            8=>15, 9=>15, 10=>14, 11=>15, 12=>20, 13=>12,
+        ];
         foreach ($widths as $col => $width) {
             $sheet->getColumnDimensionByColumn($col)->setWidth($width);
         }
