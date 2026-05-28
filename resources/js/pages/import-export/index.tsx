@@ -40,11 +40,13 @@ export default function ImportExportIndex() {
                     <p className="text-sm text-muted-foreground">
                         Download all orders as Excel. Columns: <strong>No, Name, Phone, Area, Code, Color, Size, Price, DP, Date of DP, AN, Notes.</strong>
                     </p>
-                    <a href="/import-export/export">
-                        <Button className="bg-green-600 hover:bg-green-700 w-full">
-                            <Download className="size-4 mr-2" /> Download Orders Excel
-                        </Button>
-                    </a>
+                    {/* Use window.location to bypass Inertia interception */}
+                    <Button
+                        className="bg-green-600 hover:bg-green-700 w-full"
+                        onClick={() => { window.location.href = '/import-export/export'; }}
+                    >
+                        <Download className="size-4 mr-2" /> Download Orders Excel
+                    </Button>
                 </div>
 
                 {/* Template */}
@@ -100,11 +102,14 @@ export default function ImportExportIndex() {
                         </table>
                     </div>
 
-                    <a href="/import-export/template">
-                        <Button variant="outline" className="w-full">
-                            <Download className="size-4 mr-2" /> Download Template
-                        </Button>
-                    </a>
+                    {/* Use window.location to bypass Inertia interception */}
+                    <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => { window.location.href = '/import-export/template'; }}
+                    >
+                        <Download className="size-4 mr-2" /> Download Template
+                    </Button>
                 </div>
 
                 {/* Import */}
