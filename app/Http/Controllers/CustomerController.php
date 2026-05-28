@@ -29,9 +29,11 @@ class CustomerController extends Controller
             'phone'   => 'nullable|string|max:50',
             'address' => 'nullable|string',
             'area_id' => 'nullable|exists:shipping_areas,id',
-            'type'    => 'required|in:normal,reseller',
+            'type'       => 'required|in:normal,reseller',
+            'promo_type' => 'nullable|in:default,reseller_promo',
         ]);
 
+        $validated['promo_type'] = $validated['promo_type'] ?? 'default';
         Customer::create($validated);
 
         return redirect()->route('customers.index')
@@ -51,9 +53,11 @@ class CustomerController extends Controller
             'phone'   => 'nullable|string|max:50',
             'address' => 'nullable|string',
             'area_id' => 'nullable|exists:shipping_areas,id',
-            'type'    => 'required|in:normal,reseller',
+            'type'       => 'required|in:normal,reseller',
+            'promo_type' => 'nullable|in:default,reseller_promo',
         ]);
 
+        $validated['promo_type'] = $validated['promo_type'] ?? 'default';
         $customer->update($validated);
 
         return redirect()->route('customers.index')

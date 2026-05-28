@@ -62,7 +62,8 @@ class OrderController extends Controller
                 'new_customer_phone'   => 'nullable|string|max:50',
                 'new_customer_address' => 'nullable|string',
                 'new_customer_area_id' => 'nullable|exists:shipping_areas,id',
-                'new_customer_type'    => 'nullable|in:normal,reseller',
+                'new_customer_type'       => 'nullable|in:normal,reseller',
+                'new_customer_promo_type' => 'nullable|in:default,reseller_promo',
             ]);
         } else {
             $request->validate(['customer_id' => 'required|exists:customers,id']);
@@ -122,7 +123,8 @@ class OrderController extends Controller
                     'phone'   => $request->input('new_customer_phone'),
                     'address' => $request->input('new_customer_address'),
                     'area_id' => $request->input('new_customer_area_id') ?: null,
-                    'type'    => $request->input('new_customer_type', 'normal'),
+                    'type'       => $request->input('new_customer_type', 'normal'),
+                    'promo_type' => $request->input('new_customer_promo_type', 'default'),
                 ]);
                 $customerId = $customer->id;
             } else {

@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 
 export default function CustomerCreate({ areas }: any) {
     const { data, setData, post, processing, errors } = useForm({
-        name: '', phone: '', address: '', area_id: '', type: 'normal',
+        name: '', phone: '', address: '', area_id: '', type: 'normal', promo_type: 'default',
     });
 
     function submit(e: React.FormEvent) {
@@ -65,6 +65,18 @@ export default function CustomerCreate({ areas }: any) {
                             <option value="reseller">Reseller</option>
                         </select>
                         {errors.type && <p className="text-xs text-destructive">{errors.type}</p>}
+                    </div>
+                    <div className="space-y-1">
+                        <Label>Promo Override</Label>
+                        <select className="w-full rounded-md border px-3 py-2 text-sm bg-background"
+                            value={data.promo_type} onChange={e => setData('promo_type', e.target.value)}>
+                            <option value="default">Default (follow customer type)</option>
+                            <option value="reseller_promo">Reseller Promo (gets reseller discounts)</option>
+                        </select>
+                        <p className="text-xs text-muted-foreground">
+                            Set to "Reseller Promo" to give this customer reseller-level discounts regardless of their type.
+                        </p>
+                        {errors.promo_type && <p className="text-xs text-destructive">{errors.promo_type}</p>}
                     </div>
                     <Button type="submit" disabled={processing}>Save Customer</Button>
                 </form>

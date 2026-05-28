@@ -29,7 +29,8 @@ export default function OrderCreate({ customers, areas }: any) {
         new_customer_phone:   '',
         new_customer_address: '',
         new_customer_area_id: '',
-        new_customer_type:    'normal',
+        new_customer_type:       'normal',
+        new_customer_promo_type: 'default',
         order_date:           new Date().toISOString().slice(0, 10),
         status:               'bought',
         discount:             0,
@@ -125,16 +126,21 @@ export default function OrderCreate({ customers, areas }: any) {
     useEffect(() => {
         if (promoRules.length === 0) return;
 
+        // promo_type='reseller_promo' overrides customer type for rule matching
         const custType = customerMode === 'existing'
-            ? (selectedCustomer?.type ?? 'normal')
-            : data.new_customer_type;
+            ? (selectedCustomer?.promo_type === 'reseller_promo' ? 'reseller' : (selectedCustomer?.type ?? 'normal'))
+            : (data.new_customer_promo_type === 'reseller_promo' ? 'reseller' : data.new_customer_type);
 
-        const totalQty = data.items.reduce((sum: number, i: any) => sum + Number(i.quantity), 0);
+        // Only count items whose linked product is NOT excluded from promo
+        const eligibleQty = data.items.reduce((sum: number, item: any, i: number) => {
+            const product = selectedProducts[i];
+            return sum + (product?.exclude_from_promo ? 0 : Number(item.quantity));
+        }, 0);
 
-        // Find rules that match: customer_type is 'all' or matches custType, and min_items is met
+        // Rule matching uses eligible qty only
         const matching = promoRules
-            .filter(r => (r.customer_type === 'all' || r.customer_type === custType) && totalQty >= r.min_items)
-            .sort((a, b) => b.min_items - a.min_items); // highest min_items first
+            .filter(r => (r.customer_type === 'all' || r.customer_type === custType) && eligibleQty >= r.min_items)
+            .sort((a, b) => b.min_items - a.min_items);
 
         // Reseller-specific rules take priority over 'all' rules
         const resellerMatch = matching.find(r => r.customer_type === 'reseller');
@@ -142,7 +148,7 @@ export default function OrderCreate({ customers, areas }: any) {
 
         setActivePromo(best);
 
-        if (!best) {
+        if (!best || eligibleQty === 0) {
             setData(prev => ({ ...prev, discount: 0, discount_product: 0, discount_shipping: 0 }));
             return;
         }
@@ -150,12 +156,12 @@ export default function OrderCreate({ customers, areas }: any) {
         const shippingFee     = Number(data.weight) * Number(data.shipping_fee_per_kg);
         const freeShip        = Math.min(shippingFee, best.free_shipping_max);
         const discountFlat    = best.discount_flat;
-        const discountPerItem = best.discount_per_item * totalQty;
+        const discountPerItem = best.discount_per_item * eligibleQty;
         const productDiscount = discountFlat + discountPerItem;
         const totalDiscount   = productDiscount + freeShip;
 
         setData(prev => ({ ...prev, discount: totalDiscount, discount_product: productDiscount, discount_shipping: freeShip }));
-    }, [data.items, data.total_shipping_fee, data.customer_id, data.new_customer_type, customerMode, promoRules]);
+    }, [data.items, data.total_shipping_fee, data.customer_id, data.new_customer_type, data.new_customer_promo_type, customerMode, promoRules, selectedProducts]);
 
     async function searchProduct(i: number, query: string) {
         setProductSearch(prev => ({ ...prev, [i]: query }));
@@ -374,6 +380,15 @@ export default function OrderCreate({ customers, areas }: any) {
                                         onChange={e => setData('new_customer_type', e.target.value)}>
                                         <option value="normal">Normal Customer</option>
                                         <option value="reseller">Reseller</option>
+                                    </select>
+                                </div>
+                                <div className="space-y-1">
+                                    <Label>Promo Override</Label>
+                                    <select className="w-full rounded-md border px-3 py-2 text-sm bg-background"
+                                        value={data.new_customer_promo_type}
+                                        onChange={e => setData('new_customer_promo_type', e.target.value)}>
+                                        <option value="default">Default (follow customer type)</option>
+                                        <option value="reseller_promo">Reseller Promo (gets reseller discounts)</option>
                                     </select>
                                 </div>
                             </div>
@@ -596,20 +611,29 @@ export default function OrderCreate({ customers, areas }: any) {
                             <span className="text-muted-foreground">Items subtotal</span>
                             <span>{itemsTotal.toLocaleString()}</span>
                         </div>
-                        {activePromo && (
-                            <div className="text-xs bg-green-50 text-green-700 border border-green-200 rounded px-3 py-2 space-y-0.5">
-                                <p className="font-semibold">🎉 Promo: {activePromo.label}</p>
-                                {activePromo.discount_flat > 0 && (
-                                    <p>• Discount: Rp{Number(activePromo.discount_flat).toLocaleString()}</p>
-                                )}
-                                {activePromo.discount_per_item > 0 && (
-                                    <p>• Per-item: Rp{Number(activePromo.discount_per_item).toLocaleString()} × {data.items.reduce((s: number, i: any) => s + Number(i.quantity), 0)} items</p>
-                                )}
-                                {activePromo.free_shipping_max > 0 && (
-                                    <p>• Free shipping up to Rp{Number(activePromo.free_shipping_max).toLocaleString()}</p>
-                                )}
-                            </div>
-                        )}
+                        {activePromo && (() => {
+                            const eligibleQty = data.items.reduce((s: number, item: any, i: number) =>
+                                s + (selectedProducts[i]?.exclude_from_promo ? 0 : Number(item.quantity)), 0);
+                            const excludedQty = data.items.reduce((s: number, item: any, i: number) =>
+                                s + (selectedProducts[i]?.exclude_from_promo ? Number(item.quantity) : 0), 0);
+                            return (
+                                <div className="text-xs bg-green-50 text-green-700 border border-green-200 rounded px-3 py-2 space-y-0.5">
+                                    <p className="font-semibold">🎉 Promo: {activePromo.label}</p>
+                                    {activePromo.discount_flat > 0 && (
+                                        <p>• Flat discount: Rp{Number(activePromo.discount_flat).toLocaleString()}</p>
+                                    )}
+                                    {activePromo.discount_per_item > 0 && (
+                                        <p>• Per-item: Rp{Number(activePromo.discount_per_item).toLocaleString()} × {eligibleQty} eligible items</p>
+                                    )}
+                                    {activePromo.free_shipping_max > 0 && (
+                                        <p>• Free shipping up to Rp{Number(activePromo.free_shipping_max).toLocaleString()}</p>
+                                    )}
+                                    {excludedQty > 0 && (
+                                        <p className="text-orange-600">⚠ {excludedQty} item(s) excluded from promo</p>
+                                    )}
+                                </div>
+                            );
+                        })()}
                         <div className="flex justify-between">
                             <span className="text-muted-foreground">Discount</span>
                             <span>- {Number(data.discount).toLocaleString()}</span>
