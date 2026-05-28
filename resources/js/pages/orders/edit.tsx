@@ -39,6 +39,8 @@ export default function OrderEdit({ order, customers, areas }: any) {
             quantity:           i.quantity,
             price:              Number(i.price),
             weight:             Number(i.product?.weight ?? 0),
+            // FIX: read exclude_from_promo from the eager-loaded product
+            // (items.product is now loaded by the controller).
             exclude_from_promo: i.product?.exclude_from_promo ?? false,
         })),
     });
@@ -97,9 +99,18 @@ export default function OrderEdit({ order, customers, areas }: any) {
     // Auto-apply promo discount
     useEffect(() => {
         if (promoRules.length === 0) return;
-        const customer = customers.find((c: any) => String(c.id) === String(data.customer_id));
-        const custType = customer?.promo_type === 'reseller_promo' ? 'reseller' : (customer?.type ?? 'normal');
 
+        const customer = customers.find((c: any) => String(c.id) === String(data.customer_id));
+
+        // FIX: promo_type is now included in the customers list from the
+        // controller, so reseller_promo customers correctly resolve to 'reseller'.
+        const custType = customer?.promo_type === 'reseller_promo'
+            ? 'reseller'
+            : (customer?.type ?? 'normal');
+
+        // FIX: use item.exclude_from_promo which is now correctly seeded from
+        // the eager-loaded product for existing items, and from selectProduct()
+        // for newly added items — both paths are now consistent.
         const eligibleQty = data.items.reduce((sum: number, item: any) =>
             sum + (item.exclude_from_promo ? 0 : Number(item.quantity)), 0);
 
@@ -107,6 +118,7 @@ export default function OrderEdit({ order, customers, areas }: any) {
             .filter(r => (r.customer_type === 'all' || r.customer_type === custType) && eligibleQty >= r.min_items)
             .sort((a, b) => b.min_items - a.min_items);
 
+        // Reseller-specific rules take priority over 'all' rules
         const resellerMatch = matching.find(r => r.customer_type === 'reseller');
         const best = resellerMatch ?? matching[0] ?? null;
         setActivePromo(best);

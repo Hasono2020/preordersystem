@@ -28,7 +28,6 @@ class OrderController extends Controller
             ->when($request->status, fn($q) => $q->where('status', $request->status))
             ->when($request->search, function ($q) use ($request) {
                 $search = '%' . $request->search . '%';
-                // FIX 5: Search across customer name, courier, and order date.
                 $q->where(function ($inner) use ($search) {
                     $inner->whereHas('customer', fn($q2) =>
                         $q2->where('name', 'like', $search)
@@ -49,8 +48,12 @@ class OrderController extends Controller
 
     public function create()
     {
-        $customers = Customer::with('area')->orderBy('name')->get(['id', 'name', 'phone', 'area_id', 'type']);
-        $areas     = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
+        // FIX: include promo_type so the frontend can correctly resolve
+        // customer type for promo rule matching (reseller_promo customers
+        // must match reseller rules, not normal rules).
+        $customers = Customer::with('area')->orderBy('name')
+            ->get(['id', 'name', 'phone', 'area_id', 'type', 'promo_type']);
+        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
         return Inertia::render('orders/create', compact('customers', 'areas'));
     }
 
@@ -58,10 +61,10 @@ class OrderController extends Controller
     {
         if ($request->input('customer_mode') === 'new') {
             $request->validate([
-                'new_customer_name'    => 'required|string|max:255',
-                'new_customer_phone'   => 'nullable|string|max:50',
-                'new_customer_address' => 'nullable|string',
-                'new_customer_area_id' => 'nullable|exists:shipping_areas,id',
+                'new_customer_name'       => 'required|string|max:255',
+                'new_customer_phone'      => 'nullable|string|max:50',
+                'new_customer_address'    => 'nullable|string',
+                'new_customer_area_id'    => 'nullable|exists:shipping_areas,id',
                 'new_customer_type'       => 'nullable|in:normal,reseller',
                 'new_customer_promo_type' => 'nullable|in:default,reseller_promo',
             ]);
@@ -119,10 +122,10 @@ class OrderController extends Controller
         DB::transaction(function () use ($request, $items, $totalPrice, $totalShipping, $downPayment, $remaining) {
             if ($request->input('customer_mode') === 'new') {
                 $customer = Customer::create([
-                    'name'    => $request->input('new_customer_name'),
-                    'phone'   => $request->input('new_customer_phone'),
-                    'address' => $request->input('new_customer_address'),
-                    'area_id' => $request->input('new_customer_area_id') ?: null,
+                    'name'       => $request->input('new_customer_name'),
+                    'phone'      => $request->input('new_customer_phone'),
+                    'address'    => $request->input('new_customer_address'),
+                    'area_id'    => $request->input('new_customer_area_id') ?: null,
                     'type'       => $request->input('new_customer_type', 'normal'),
                     'promo_type' => $request->input('new_customer_promo_type', 'default'),
                 ]);
@@ -137,8 +140,8 @@ class OrderController extends Controller
                 'order_date'          => $request->input('order_date'),
                 'status'              => $request->input('status'),
                 'discount'            => $request->input('discount', 0),
-                'discount_product'     => $request->input('discount_product', 0),
-                'discount_shipping'    => $request->input('discount_shipping', 0),
+                'discount_product'    => $request->input('discount_product', 0),
+                'discount_shipping'   => $request->input('discount_shipping', 0),
                 'shipping_fee'        => 0,
                 'shipping_fee_per_kg' => $request->input('shipping_fee_per_kg', 0),
                 'total_shipping_fee'  => $totalShipping,
@@ -182,9 +185,13 @@ class OrderController extends Controller
     {
         $this->authorizeOrder($order);
 
-        $order->load(['items', 'customer']);
-        $customers = Customer::with('area')->orderBy('name')->get(['id', 'name', 'phone', 'area_id', 'type']);
-        $areas     = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
+        // FIX: eager-load items.product so exclude_from_promo is available
+        // for existing items when the edit form loads and recalculates promo.
+        // FIX: include promo_type in customers list (same as create).
+        $order->load(['items.product', 'customer']);
+        $customers = Customer::with('area')->orderBy('name')
+            ->get(['id', 'name', 'phone', 'area_id', 'type', 'promo_type']);
+        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
         return Inertia::render('orders/edit', compact('order', 'customers', 'areas'));
     }
 
@@ -266,8 +273,8 @@ class OrderController extends Controller
                 'order_date'          => $request->input('order_date'),
                 'status'              => $request->input('status'),
                 'discount'            => $request->input('discount', 0),
-                'discount_product'     => $request->input('discount_product', 0),
-                'discount_shipping'    => $request->input('discount_shipping', 0),
+                'discount_product'    => $request->input('discount_product', 0),
+                'discount_shipping'   => $request->input('discount_shipping', 0),
                 'shipping_fee'        => 0,
                 'shipping_fee_per_kg' => $request->input('shipping_fee_per_kg', 0),
                 'total_shipping_fee'  => $totalShipping,
