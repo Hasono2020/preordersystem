@@ -15,12 +15,24 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function OrdersIndex({ orders, filters }: any) {
     const { flash } = usePage().props as any;
-    const { data, setData } = useForm({ search: filters.search ?? '', status: filters.status ?? '' });
+    const { data, setData } = useForm({
+        search:    filters.search    ?? '',
+        status:    filters.status    ?? '',
+        date_from: filters.date_from ?? '',
+        date_to:   filters.date_to   ?? '',
+    });
 
     function search(e: React.FormEvent) {
         e.preventDefault();
         router.get('/orders', data, { preserveState: true });
     }
+
+    function clearFilters() {
+        setData({ search: '', status: '', date_from: '', date_to: '' });
+        router.get('/orders', {}, { preserveState: true });
+    }
+
+    const hasFilters = data.search || data.status || data.date_from || data.date_to;
 
     function destroy(id: number) {
         if (confirm('Delete this order?')) router.delete(`/orders/${id}`);
@@ -44,32 +56,62 @@ export default function OrdersIndex({ orders, filters }: any) {
                 )}
 
                 {/* Filters */}
-                <form onSubmit={search} className="flex gap-2">
-                    <Input
-                        placeholder="Search by customer name..."
-                        value={data.search}
-                        onChange={e => setData('search', e.target.value)}
-                        className="max-w-xs"
-                    />
-                    <select
-                        className="rounded-md border px-3 py-2 text-sm bg-background"
-                        value={data.status}
-                        onChange={e => setData('status', e.target.value)}
-                    >
-                        <option value="">All statuses</option>
-                        <option value="bought">Bought</option>
-                        <option value="keep">Keep</option>
-                        <option value="sold_out">Sold Out</option>
-                    </select>
+                <form onSubmit={search} className="flex flex-wrap gap-2 items-end">
+                    <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground font-medium">Search</p>
+                        <Input
+                            placeholder="Search by name, order #, courier..."
+                            value={data.search}
+                            onChange={e => setData('search', e.target.value)}
+                            className="w-56"
+                        />
+                    </div>
+                    <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground font-medium">Status</p>
+                        <select
+                            className="rounded-md border px-3 py-2 text-sm bg-background"
+                            value={data.status}
+                            onChange={e => setData('status', e.target.value)}
+                        >
+                            <option value="">All statuses</option>
+                            <option value="bought">Bought</option>
+                            <option value="keep">Keep</option>
+                            <option value="sold_out">Sold Out</option>
+                        </select>
+                    </div>
+                    <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground font-medium">From</p>
+                        <Input
+                            type="date"
+                            value={data.date_from}
+                            onChange={e => setData('date_from', e.target.value)}
+                            className="w-38"
+                        />
+                    </div>
+                    <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground font-medium">To</p>
+                        <Input
+                            type="date"
+                            value={data.date_to}
+                            onChange={e => setData('date_to', e.target.value)}
+                            className="w-38"
+                        />
+                    </div>
                     <Button type="submit" variant="outline" size="sm">
                         <Search className="size-4" />
                     </Button>
+                    {hasFilters && (
+                        <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
+                            Clear
+                        </Button>
+                    )}
                 </form>
 
                 <div className="rounded-lg border overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead className="bg-muted text-muted-foreground">
                             <tr>
+                                <th className="text-left px-4 py-3 w-16">#</th>
                                 <th className="text-left px-4 py-3">Date</th>
                                 <th className="text-left px-4 py-3">Customer</th>
                                 <th className="text-left px-4 py-3">Status</th>
@@ -82,6 +124,9 @@ export default function OrdersIndex({ orders, filters }: any) {
                         <tbody>
                             {orders.data.map((o: any) => (
                                 <tr key={o.id} className="border-t hover:bg-muted/40">
+                                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">
+                                        <Link href={`/orders/${o.id}`} className="hover:text-primary">#{o.id}</Link>
+                                    </td>
                                     <td className="px-4 py-3 whitespace-nowrap">
                                         {new Date(o.order_date).toLocaleDateString('en-GB', {
                                             day: '2-digit', month: 'short', year: 'numeric'
@@ -114,7 +159,7 @@ export default function OrdersIndex({ orders, filters }: any) {
                                 </tr>
                             ))}
                             {orders.data.length === 0 && (
-                                <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">No orders found.</td></tr>
+                                <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">No orders found.</td></tr>
                             )}
                         </tbody>
                     </table>

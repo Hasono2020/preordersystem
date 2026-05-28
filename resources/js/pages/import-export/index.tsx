@@ -38,15 +38,13 @@ export default function ImportExportIndex() {
                         <h2 className="font-semibold text-base">Export Orders</h2>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                        Download all orders as Excel. Columns: <strong>No, Name, Phone, Area, Code, Color, Size, Price, DP, Date of DP, AN, Notes.</strong>
+                        Download all orders as Excel. Columns: <strong>No, Name, Phone, Area, Code, Color, Size, Price, DP, Date of DP, AN, Notes, Type, Promo Type, Discount.</strong>
                     </p>
-                    {/* Use window.location to bypass Inertia interception */}
-                    <Button
-                        className="bg-green-600 hover:bg-green-700 w-full"
-                        onClick={() => { window.location.href = '/import-export/export'; }}
-                    >
-                        <Download className="size-4 mr-2" /> Download Orders Excel
-                    </Button>
+                    <a href="/import-export/export">
+                        <Button className="bg-green-600 hover:bg-green-700 w-full">
+                            <Download className="size-4 mr-2" /> Download Orders Excel
+                        </Button>
+                    </a>
                 </div>
 
                 {/* Template */}
@@ -64,18 +62,19 @@ export default function ImportExportIndex() {
                         <table className="w-full">
                             <thead className="bg-muted">
                                 <tr>
-                                    {['No','Name','Phone','Area','Code','Color','Size','Price','DP','Date of DP','AN','Notes'].map(h => (
+                                    {['No','Name','Phone','Area','Code','Color','Size','Price','DP','Date of DP','AN','Notes','Type','Promo Type'].map(h => (
                                         <th key={h} className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">{h}</th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody className="text-muted-foreground italic">
+                                {/* Row 1 — normal customer, 2 items */}
                                 <tr className="border-t">
                                     <td className="px-2 py-1">1</td>
                                     <td className="px-2 py-1">JASMINE</td>
                                     <td className="px-2 py-1">0812...</td>
-                                    <td className="px-2 py-1">Jakarta</td>
-                                    <td className="px-2 py-1">NA_03</td>
+                                    <td className="px-2 py-1">Jakarta Selatan</td>
+                                    <td className="px-2 py-1">NA_01</td>
                                     <td className="px-2 py-1">GREY</td>
                                     <td className="px-2 py-1">FZ</td>
                                     <td className="px-2 py-1">169000</td>
@@ -83,13 +82,16 @@ export default function ImportExportIndex() {
                                     <td className="px-2 py-1">2026-05-03</td>
                                     <td className="px-2 py-1">JASMINE</td>
                                     <td className="px-2 py-1">—</td>
+                                    <td className="px-2 py-1">normal</td>
+                                    <td className="px-2 py-1">default</td>
                                 </tr>
+                                {/* Row 2 — same customer, 2nd item (name/phone/area blank) */}
                                 <tr className="border-t">
                                     <td className="px-2 py-1">2</td>
                                     <td className="px-2 py-1 text-muted-foreground/50">(blank)</td>
                                     <td className="px-2 py-1 text-muted-foreground/50">(blank)</td>
                                     <td className="px-2 py-1 text-muted-foreground/50">(blank)</td>
-                                    <td className="px-2 py-1">NA_03</td>
+                                    <td className="px-2 py-1">NA_02</td>
                                     <td className="px-2 py-1">BROWN</td>
                                     <td className="px-2 py-1">FZ</td>
                                     <td className="px-2 py-1">169000</td>
@@ -97,19 +99,56 @@ export default function ImportExportIndex() {
                                     <td className="px-2 py-1 text-muted-foreground/50">(blank)</td>
                                     <td className="px-2 py-1 text-muted-foreground/50">(blank)</td>
                                     <td className="px-2 py-1">—</td>
+                                    <td className="px-2 py-1 text-muted-foreground/50">(blank)</td>
+                                    <td className="px-2 py-1 text-muted-foreground/50">(blank)</td>
+                                </tr>
+                                {/* Row 3 — reseller */}
+                                <tr className="border-t">
+                                    <td className="px-2 py-1">3</td>
+                                    <td className="px-2 py-1">PHOENIX</td>
+                                    <td className="px-2 py-1">0819...</td>
+                                    <td className="px-2 py-1">Surabaya</td>
+                                    <td className="px-2 py-1">NA_01</td>
+                                    <td className="px-2 py-1">WHITE</td>
+                                    <td className="px-2 py-1">FZ</td>
+                                    <td className="px-2 py-1">95000</td>
+                                    <td className="px-2 py-1 text-muted-foreground/50">(blank)</td>
+                                    <td className="px-2 py-1 text-muted-foreground/50">(blank)</td>
+                                    <td className="px-2 py-1">PHOENIX</td>
+                                    <td className="px-2 py-1">—</td>
+                                    <td className="px-2 py-1">reseller</td>
+                                    <td className="px-2 py-1">default</td>
+                                </tr>
+                                {/* Row 4 — normal customer with reseller promo */}
+                                <tr className="border-t">
+                                    <td className="px-2 py-1">4</td>
+                                    <td className="px-2 py-1">MAYA</td>
+                                    <td className="px-2 py-1">0819...</td>
+                                    <td className="px-2 py-1">Bandung</td>
+                                    <td className="px-2 py-1">NA_01</td>
+                                    <td className="px-2 py-1">BLACK</td>
+                                    <td className="px-2 py-1">FZ</td>
+                                    <td className="px-2 py-1">169000</td>
+                                    <td className="px-2 py-1 text-muted-foreground/50">(blank)</td>
+                                    <td className="px-2 py-1 text-muted-foreground/50">(blank)</td>
+                                    <td className="px-2 py-1">MAYA</td>
+                                    <td className="px-2 py-1">—</td>
+                                    <td className="px-2 py-1">normal</td>
+                                    <td className="px-2 py-1 text-amber-600 font-semibold not-italic">reseller_promo</td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
+                    <p className="text-xs text-muted-foreground">
+                        <strong>Type:</strong> <code>normal</code> or <code>reseller</code> &nbsp;·&nbsp;
+                        <strong>Promo Type:</strong> <code>default</code> (follows Type) or <code>reseller_promo</code> (normal customer who gets reseller discounts)
+                    </p>
 
-                    {/* Use window.location to bypass Inertia interception */}
-                    <Button
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => { window.location.href = '/import-export/template'; }}
-                    >
-                        <Download className="size-4 mr-2" /> Download Template
-                    </Button>
+                    <a href="/import-export/template">
+                        <Button variant="outline" className="w-full">
+                            <Download className="size-4 mr-2" /> Download Template
+                        </Button>
+                    </a>
                 </div>
 
                 {/* Import */}

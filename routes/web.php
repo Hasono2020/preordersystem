@@ -9,6 +9,7 @@ use App\Http\Controllers\ShippingAreaController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ImportExportController;
 use App\Http\Controllers\PromoRuleController;
+use App\Http\Controllers\PaymentController;
 
 Route::inertia('/', 'welcome')->name('home');
 
@@ -27,6 +28,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Orders
     Route::resource('orders', OrderController::class);
+    Route::post('orders/{order}/payments', [PaymentController::class, 'store'])->name('orders.payments.store');
+    Route::delete('orders/{order}/payments/{payment}', [PaymentController::class, 'destroy'])->name('orders.payments.destroy');
 
     // Print customer report
     Route::get('customers/{customer}/print', [CustomerController::class, 'print'])

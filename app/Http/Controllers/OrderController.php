@@ -27,22 +27,26 @@ class OrderController extends Controller
         $orders = Order::with(['customer', 'user', 'items'])
             ->when($request->status, fn($q) => $q->where('status', $request->status))
             ->when($request->search, function ($q) use ($request) {
-                $search = '%' . $request->search . '%';
-                $q->where(function ($inner) use ($search) {
-                    $inner->whereHas('customer', fn($q2) =>
-                        $q2->where('name', 'like', $search)
-                    )
-                    ->orWhere('courier', 'like', $search)
-                    ->orWhere('order_date', 'like', $search);
+                $raw    = ltrim(trim($request->search), '#');
+                $search = '%' . $raw . '%';
+                $q->where(function ($inner) use ($raw, $search) {
+                    $inner->where('id', 'like', $search)
+                          ->orWhereHas('customer', fn($q2) =>
+                              $q2->where('name', 'like', $search)
+                          )
+                          ->orWhere('courier', 'like', $search)
+                          ->orWhere('order_date', 'like', $search);
                 });
             })
+            ->when($request->date_from, fn($q) => $q->whereDate('order_date', '>=', $request->date_from))
+            ->when($request->date_to,   fn($q) => $q->whereDate('order_date', '<=', $request->date_to))
             ->latest()
             ->paginate(20)
             ->withQueryString();
 
         return Inertia::render('orders/index', [
             'orders'  => $orders,
-            'filters' => $request->only('status', 'search'),
+            'filters' => $request->only('status', 'search', 'date_from', 'date_to'),
         ]);
     }
 

@@ -1,6 +1,8 @@
-import { Head, Link, router } from '@inertiajs/react';
-import { Pencil, Trash2, Printer } from 'lucide-react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
+import { Pencil, Trash2, Printer, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 const STATUS_COLORS: Record<string, string> = {
     bought:   'bg-green-100 text-green-800',
@@ -12,9 +14,64 @@ const STATUS_LABELS: Record<string, string> = {
     bought: 'Bought', keep: 'Keep', sold_out: 'Sold Out',
 };
 
+function PaymentForm({ orderId }: { orderId: number }) {
+    const { data, setData, post, processing, reset, errors } = useForm({
+        amount:  '',
+        paid_at: new Date().toISOString().slice(0, 10),
+        note:    '',
+    });
+
+    function submit(e: React.FormEvent) {
+        e.preventDefault();
+        post(`/orders/${orderId}/payments`, { onSuccess: () => reset() });
+    }
+
+    return (
+        <form onSubmit={submit} className="border rounded-lg p-4 space-y-3 bg-muted/30">
+            <p className="text-sm font-medium">Record a payment</p>
+            <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                    <Label className="text-xs">Amount</Label>
+                    <Input
+                        type="number" min="1"
+                        placeholder="e.g. 500000"
+                        value={data.amount}
+                        onChange={e => setData('amount', e.target.value)}
+                    />
+                    {errors.amount && <p className="text-xs text-destructive">{errors.amount}</p>}
+                </div>
+                <div className="space-y-1">
+                    <Label className="text-xs">Date</Label>
+                    <Input
+                        type="date"
+                        value={data.paid_at}
+                        onChange={e => setData('paid_at', e.target.value)}
+                    />
+                </div>
+            </div>
+            <div className="space-y-1">
+                <Label className="text-xs">Note (optional)</Label>
+                <Input
+                    placeholder="e.g. Transfer BCA"
+                    value={data.note}
+                    onChange={e => setData('note', e.target.value)}
+                />
+            </div>
+            <Button type="submit" size="sm" disabled={processing || !data.amount}>
+                <Plus className="size-4 mr-1" /> Add Payment
+            </Button>
+        </form>
+    );
+}
+
 export default function OrderShow({ order }: any) {
     function destroy() {
         if (confirm('Delete this order?')) router.delete(`/orders/${order.id}`);
+    }
+
+    function removePayment(paymentId: number) {
+        if (confirm('Remove this payment?'))
+            router.delete(`/orders/${order.id}/payments/${paymentId}`);
     }
 
     const discountProduct  = Number(order.discount_product  ?? 0);
@@ -22,6 +79,9 @@ export default function OrderShow({ order }: any) {
     const totalDiscount    = Number(order.discount);
     const hasBreakdown     = discountProduct > 0 || discountShipping > 0;
     const itemsTotal       = order.items.reduce((s: number, i: any) => s + Number(i.total_price), 0);
+    const payments         = order.payments ?? [];
+    const totalPaid        = payments.reduce((s: number, p: any) => s + Number(p.amount), 0);
+    const isFullyPaid      = Number(order.remaining_payment) <= 0;
 
     return (
         <>
@@ -102,7 +162,6 @@ export default function OrderShow({ order }: any) {
                         <span>{itemsTotal.toLocaleString()}</span>
                     </div>
 
-                    {/* Promo discount breakdown */}
                     {totalDiscount > 0 && (
                         <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2.5 space-y-1.5">
                             <p className="text-xs font-semibold text-green-700">🎉 Promo discount</p>
@@ -144,14 +203,38 @@ export default function OrderShow({ order }: any) {
                         <span>{Number(order.total_price).toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between">
-                        <span className="text-muted-foreground">Down payment</span>
+                        <span className="text-muted-foreground">Down payment (initial)</span>
                         <span>- {Number(order.down_payment).toLocaleString()}</span>
                     </div>
-                    <div className="flex justify-between font-semibold text-orange-600">
-                        <span>Remaining</span>
-                        <span>{Number(order.remaining_payment).toLocaleString()}</span>
+
+                    {/* Subsequent payments */}
+                    {payments.map((p: any) => (
+                        <div key={p.id} className="flex justify-between items-center text-sm">
+                            <span className="text-muted-foreground">
+                                Payment — {new Date(p.paid_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                {p.note && <span className="ml-1 italic">({p.note})</span>}
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <span>- {Number(p.amount).toLocaleString()}</span>
+                                <button onClick={() => removePayment(p.id)}
+                                    className="text-destructive hover:text-destructive/70 text-xs">✕</button>
+                            </div>
+                        </div>
+                    ))}
+
+                    <div className={`flex justify-between font-semibold pt-1 border-t ${isFullyPaid ? 'text-green-600' : 'text-orange-600'}`}>
+                        <span>{isFullyPaid ? '✓ Fully paid' : 'Remaining'}</span>
+                        <span>{isFullyPaid ? 'PAID' : Number(order.remaining_payment).toLocaleString()}</span>
                     </div>
                 </div>
+
+                {/* Payment recording — only show if there's still a balance */}
+                {!isFullyPaid && (
+                    <div className="space-y-2">
+                        <h2 className="font-medium">Record payment</h2>
+                        <PaymentForm orderId={order.id} />
+                    </div>
+                )}
             </div>
         </>
     );

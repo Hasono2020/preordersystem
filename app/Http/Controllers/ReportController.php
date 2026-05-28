@@ -12,11 +12,18 @@ class ReportController extends Controller
     public function index(Request $request)
     {
         $period = $request->period ?? 'monthly';
+        $month  = (int) ($request->month ?? now()->month);
 
-        // FIX 6: Clamp year to current year so users can't request reports
-        // for future years that return a confusing empty result.
-        $year  = min((int) ($request->year ?? now()->year), now()->year);
-        $month = (int) ($request->month ?? now()->month);
+        // Derive available years dynamically from earliest order to current year + 1
+        $driver        = DB::getDriverName();
+        $yearExpr      = $driver === 'sqlite' ? "CAST(strftime('%Y', order_date) AS INTEGER)" : 'YEAR(order_date)';
+        $earliestYear  = (int) (Order::selectRaw("{$yearExpr} as y")->orderByRaw("{$yearExpr}")->value('y') ?? now()->year);
+        $availableYears = range($earliestYear, now()->year + 1);
+
+        $year = (int) ($request->year ?? now()->year);
+        if (!in_array($year, $availableYears)) {
+            $year = now()->year;
+        }
 
         if ($period === 'daily') {
             $data = Order::whereYear('order_date', $year)
@@ -26,8 +33,6 @@ class ReportController extends Controller
                 ->orderBy('label')
                 ->get();
         } else {
-            $driver = DB::getDriverName();
-
             $monthExpr = $driver === 'sqlite'
                 ? "CAST(strftime('%m', order_date) AS INTEGER)"
                 : 'MONTH(order_date)';
@@ -48,6 +53,6 @@ class ReportController extends Controller
             'total_sales'  => $data->sum('total_sales'),
         ];
 
-        return Inertia::render('reports/index', compact('data', 'summary', 'period', 'year', 'month'));
+        return Inertia::render('reports/index', compact('data', 'summary', 'period', 'year', 'month', 'availableYears'));
     }
 }

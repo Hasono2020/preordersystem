@@ -95,13 +95,19 @@ class CustomerController extends Controller
 
     public function bulkDelete(Request $request)
     {
-        // FIX 4: The "delete all" flag is restricted to admins only.
-        // Staff can still delete selected customers by ID, just not wipe everything.
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+
         if ($request->boolean('all')) {
-            /** @var \App\Models\User $user */
-            $user = Auth::user();
             if (!$user->isAdmin()) {
                 abort(403, 'Only administrators can delete all customers.');
+            }
+
+            // Block if any customer has orders
+            $withOrders = Customer::has('orders')->count();
+            if ($withOrders > 0) {
+                return redirect()->route('customers.index')
+                    ->with('error', "Cannot delete all customers — {$withOrders} customer(s) still have orders. Delete their orders first.");
             }
 
             $count = Customer::count();
@@ -115,6 +121,15 @@ class CustomerController extends Controller
             'ids'   => 'required|array|min:1',
             'ids.*' => 'exists:customers,id',
         ]);
+
+        // Block customers who have orders
+        $withOrders = Customer::whereIn('id', $request->ids)->has('orders')->pluck('name');
+        if ($withOrders->isNotEmpty()) {
+            $names = $withOrders->take(5)->join(', ');
+            $extra = $withOrders->count() > 5 ? ' and ' . ($withOrders->count() - 5) . ' more' : '';
+            return redirect()->route('customers.index')
+                ->with('error', "Cannot delete: {$names}{$extra} still have orders. Delete their orders first.");
+        }
 
         Customer::whereIn('id', $request->ids)->delete();
         $count = count($request->ids);

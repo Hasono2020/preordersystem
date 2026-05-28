@@ -4,7 +4,7 @@ import { TrendingUp, ShoppingCart } from 'lucide-react';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-export default function ReportsIndex({ data, summary, period, year, month }: any) {
+export default function ReportsIndex({ data, summary, period, year, month, availableYears }: any) {
     const { data: filters, setData } = useForm({
         period, year: String(year), month: String(month),
     });
@@ -46,7 +46,7 @@ export default function ReportsIndex({ data, summary, period, year, month }: any
                             value={filters.year}
                             onChange={e => setData('year', e.target.value)}
                         >
-                            {[2024, 2025, 2026].map(y => (
+                            {(availableYears ?? [2024, 2025, 2026]).map((y: number) => (
                                 <option key={y} value={y}>{y}</option>
                             ))}
                         </select>
