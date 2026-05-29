@@ -16,6 +16,14 @@ class PaymentController extends Controller
             'note'    => 'nullable|string|max:255',
         ]);
 
+        // Guard: don't allow overpayment
+        if ($request->amount > $order->remaining_payment) {
+            return back()->withErrors([
+                'amount' => 'Payment amount exceeds the remaining balance of ' .
+                            number_format($order->remaining_payment) . '.',
+            ])->withInput();
+        }
+
         Payment::create([
             'order_id' => $order->id,
             'amount'   => $request->amount,
@@ -24,9 +32,10 @@ class PaymentController extends Controller
             'note'     => $request->note,
         ]);
 
-        // Recalculate remaining_payment
-        $totalPaid           = $order->payments()->sum('amount') + $order->down_payment;
-        $remaining           = max($order->total_price - $totalPaid, 0);
+        // Recalculate remaining_payment from payments only (down_payment is separate)
+        // The payments table stores *subsequent* payments only, not the initial down_payment.
+        $totalSubsequent      = $order->payments()->sum('amount');
+        $remaining            = max($order->total_price - $order->down_payment - $totalSubsequent, 0);
         $order->remaining_payment = $remaining;
         $order->save();
 
@@ -36,11 +45,16 @@ class PaymentController extends Controller
 
     public function destroy(Order $order, Payment $payment)
     {
+        // FIX: Ensure the payment actually belongs to this order
+        if ($payment->order_id !== $order->id) {
+            abort(403, 'This payment does not belong to this order.');
+        }
+
         $payment->delete();
 
         // Recalculate remaining_payment
-        $totalPaid            = $order->payments()->sum('amount') + $order->down_payment;
-        $remaining            = max($order->total_price - $totalPaid, 0);
+        $totalSubsequent      = $order->payments()->sum('amount');
+        $remaining            = max($order->total_price - $order->down_payment - $totalSubsequent, 0);
         $order->remaining_payment = $remaining;
         $order->save();
 

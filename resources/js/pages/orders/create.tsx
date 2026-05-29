@@ -597,8 +597,9 @@ export default function OrderCreate({ customers, areas }: any) {
                                                     ) : (
                                                         <Input value={item.size} onChange={e => updateItem(i, 'size', e.target.value)} placeholder="Size" />
                                                     )}
+
                                                 </td>
-                                                {/* Qty — allows clearing and retyping */}
+                                                {/* Qty */}
                                                 <td className="px-2 py-2">
                                                     <Input
                                                         type="number"
@@ -609,17 +610,6 @@ export default function OrderCreate({ customers, areas }: any) {
                                                         onBlur={e => { if (e.target.value === '' || Number(e.target.value) < 1) updateItem(i, 'quantity', 1); }}
                                                         className="w-16"
                                                     />
-                                                    {matched?.variants?.length > 0 && item.color && item.size && (() => {
-                                                        const stock = getVariantStock(matched, item.color, item.size);
-                                                        return (
-                                                            <span className={`text-xs mt-0.5 block font-medium ${
-                                                                stock <= 0 ? 'text-red-500' :
-                                                                stock < 5  ? 'text-amber-500' : 'text-green-600'
-                                                            }`}>
-                                                                {stock <= 0 ? '⚠ No stock — cannot order' : `${stock} left`}
-                                                            </span>
-                                                        );
-                                                    })()}
                                                 </td>
                                                 <td className="px-2 py-2">
                                                     <Input

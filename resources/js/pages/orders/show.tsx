@@ -14,7 +14,7 @@ const STATUS_LABELS: Record<string, string> = {
     bought: 'Bought', keep: 'Keep', sold_out: 'Sold Out',
 };
 
-function PaymentForm({ orderId }: { orderId: number }) {
+function PaymentForm({ orderId, remaining }: { orderId: number; remaining: number }) {
     const { data, setData, post, processing, reset, errors } = useForm({
         amount:  '',
         paid_at: new Date().toISOString().slice(0, 10),
@@ -31,9 +31,9 @@ function PaymentForm({ orderId }: { orderId: number }) {
             <p className="text-sm font-medium">Record a payment</p>
             <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                    <Label className="text-xs">Amount</Label>
+                    <Label className="text-xs">Amount (max: Rp{remaining.toLocaleString()})</Label>
                     <Input
-                        type="number" min="1"
+                        type="number" min="1" max={remaining}
                         placeholder="e.g. 500000"
                         value={data.amount}
                         onChange={e => setData('amount', e.target.value)}
@@ -80,7 +80,9 @@ export default function OrderShow({ order }: any) {
     const hasBreakdown     = discountProduct > 0 || discountShipping > 0;
     const itemsTotal       = order.items.reduce((s: number, i: any) => s + Number(i.total_price), 0);
     const payments         = order.payments ?? [];
-    const totalPaid        = payments.reduce((s: number, p: any) => s + Number(p.amount), 0);
+    // totalPaid = down_payment + all subsequent payments
+    const totalSubsequent  = payments.reduce((s: number, p: any) => s + Number(p.amount), 0);
+    const totalPaid        = Number(order.down_payment) + totalSubsequent;
     const isFullyPaid      = Number(order.remaining_payment) <= 0;
 
     return (
@@ -232,7 +234,7 @@ export default function OrderShow({ order }: any) {
                 {!isFullyPaid && (
                     <div className="space-y-2">
                         <h2 className="font-medium">Record payment</h2>
-                        <PaymentForm orderId={order.id} />
+                        <PaymentForm orderId={order.id} remaining={Number(order.remaining_payment)} />
                     </div>
                 )}
             </div>

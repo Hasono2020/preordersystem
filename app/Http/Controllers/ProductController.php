@@ -106,6 +106,12 @@ class ProductController extends Controller
 
     public function destroy(Product $product)
     {
+        if ($product->orderItems()->exists()) {
+            $name = $product->name;
+            return redirect()->route('products.index')
+                ->with('error', "Cannot delete '{$name}' - it has existing order items. Remove or reassign them first.");
+        }
+
         $product->delete();
         return redirect()->route('products.index')
             ->with('success', 'Product deleted.');
@@ -113,12 +119,25 @@ class ProductController extends Controller
 
     public function search(Request $request)
     {
-        $products = Product::where(function($q) use ($request) {
-                $q->where('code', 'like', '%'.$request->q.'%')
-                  ->orWhere('name', 'like', '%'.$request->q.'%');
+        // Validate and limit query length
+        $request->validate(['q' => 'nullable|string|max:100']);
+
+        $q = trim($request->q ?? '');
+
+        if ($q === '') {
+            return response()->json([]);
+        }
+
+        // Return only the fields needed for the order form dropdown.
+        // Full variants JSON is intentionally excluded here to keep the
+        // response lean — it's fetched after a product is selected.
+        $products = Product::where(function ($query) use ($q) {
+                $query->where('code', 'like', '%' . $q . '%')
+                      ->orWhere('name', 'like', '%' . $q . '%');
             })
             ->limit(10)
-            ->get(['id', 'code', 'name', 'price', 'weight', 'quantity', 'colors', 'sizes', 'variants', 'exclude_from_promo']);
+            ->get(['id', 'code', 'name', 'price', 'weight', 'quantity',
+                   'colors', 'sizes', 'variants', 'exclude_from_promo']);
 
         return response()->json($products);
     }

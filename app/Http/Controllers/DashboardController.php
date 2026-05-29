@@ -16,10 +16,10 @@ class DashboardController extends Controller
             'total_orders'    => Order::count(),
             'total_customers' => Customer::count(),
 
+            // total_price already includes shipping fee, so this is gross sales this month
             'this_month_sales' => Order::whereYear('order_date', $now->year)
                 ->whereMonth('order_date', $now->month)
-                ->selectRaw('SUM(total_price - total_shipping_fee) as total')
-                ->value('total') ?? 0,
+                ->sum('total_price') ?? 0,
 
             'pending_remaining' => Order::where('remaining_payment', '>', 0)
                 ->sum('remaining_payment'),
