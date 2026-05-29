@@ -296,9 +296,9 @@ export default function OrderEdit({ order, customers, areas }: any) {
                             <table className="w-full text-sm">
                                 <thead className="bg-muted text-muted-foreground">
                                     <tr>
-                                        <th className="text-left px-3 py-2">Product</th>
-                                        <th className="text-left px-3 py-2">Color</th>
-                                        <th className="text-left px-3 py-2">Size</th>
+                                        <th className="text-left px-3 py-2 w-52">Product</th>
+                                        <th className="text-left px-3 py-2 w-32">Color</th>
+                                        <th className="text-left px-3 py-2 w-28">Size</th>
                                         <th className="text-left px-3 py-2">Qty</th>
                                         <th className="text-left px-3 py-2">Price</th>
                                         <th className="text-right px-3 py-2">Total</th>

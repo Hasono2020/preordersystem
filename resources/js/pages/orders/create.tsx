@@ -479,13 +479,13 @@ export default function OrderCreate({ customers, areas }: any) {
                             <table className="w-full text-sm">
                                 <thead className="bg-muted text-muted-foreground">
                                     <tr>
-                                        <th className="text-left px-3 py-2">Product</th>
-                                        <th className="text-left px-3 py-2">Color</th>
-                                        <th className="text-left px-3 py-2">Size</th>
-                                        <th className="text-left px-3 py-2">Qty</th>
-                                        <th className="text-left px-3 py-2">Price</th>
-                                        <th className="text-right px-3 py-2">Total</th>
-                                        <th className="px-3 py-2"></th>
+                                        <th className="text-left px-3 py-2 w-52">Product</th>
+                                        <th className="text-left px-3 py-2 w-32">Color</th>
+                                        <th className="text-left px-3 py-2 w-28">Size</th>
+                                        <th className="text-left px-3 py-2 w-24">Qty</th>
+                                        <th className="text-left px-3 py-2 w-28">Price</th>
+                                        <th className="text-right px-3 py-2 w-24">Total</th>
+                                        <th className="px-3 py-2 w-10"></th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -496,7 +496,7 @@ export default function OrderCreate({ customers, areas }: any) {
 
                                         return (
                                             <tr key={i} className="border-t">
-                                                <td className="px-2 py-2 relative min-w-45">
+                                                <td className="px-2 py-2 relative w-52">
                                                     <Input
                                                         value={productSearch[i] ?? item.product_name}
                                                         onChange={e => searchProduct(i, e.target.value)}
@@ -543,7 +543,7 @@ export default function OrderCreate({ customers, areas }: any) {
                                                         </div>
                                                     )}
                                                 </td>
-                                                <td className="px-2 py-2 min-w-25">
+                                                <td className="px-2 py-2 w-32">
                                                     {colors.length > 0 ? (
                                                         <select
                                                             className="w-full rounded-md border px-2 py-2 text-sm bg-background"
@@ -574,7 +574,7 @@ export default function OrderCreate({ customers, areas }: any) {
                                                         <Input value={item.color} onChange={e => updateItem(i, 'color', e.target.value)} placeholder="Color" />
                                                     )}
                                                 </td>
-                                                <td className="px-2 py-2 min-w-20">
+                                                <td className="px-2 py-2 w-28">
                                                     {sizes.length > 0 ? (
                                                         <select
                                                             className="w-full rounded-md border px-2 py-2 text-sm bg-background"
