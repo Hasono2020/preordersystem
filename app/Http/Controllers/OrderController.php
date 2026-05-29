@@ -109,10 +109,30 @@ class OrderController extends Controller
             foreach ($items as $index => $item) {
                 if (!empty($item['product_id'])) {
                     $product = Product::lockForUpdate()->find($item['product_id']);
-                    if ($product && $product->quantity < $item['quantity']) {
-                        $errors["items.{$index}.quantity"] = [
-                            "Only {$product->quantity} units of \"{$product->name}\" are in stock."
-                        ];
+                    if (!$product) continue;
+
+                    $color = $item['color'] ?? null;
+                    $size  = $item['size']  ?? null;
+
+                    // Bug #2 fix: check variant-level stock if color+size specified
+                    if ($color && $size && is_array($product->variants)) {
+                        $variant = collect($product->variants)->first(
+                            fn($v) => strtoupper($v['color']) === strtoupper($color)
+                                   && strtoupper($v['size'])  === strtoupper($size)
+                        );
+                        $variantQty = $variant ? (int)$variant['quantity'] : 0;
+                        if ($variantQty < $item['quantity']) {
+                            $errors["items.{$index}.quantity"] = [
+                                "Only {$variantQty} units of \"{$product->name}\" ({$color} / {$size}) are in stock."
+                            ];
+                        }
+                    } else {
+                        // Fallback: check total stock
+                        if ($product->quantity < $item['quantity']) {
+                            $errors["items.{$index}.quantity"] = [
+                                "Only {$product->quantity} units of \"{$product->name}\" are in stock."
+                            ];
+                        }
                     }
                 }
             }
@@ -169,8 +189,25 @@ class OrderController extends Controller
                 ]);
 
                 if (!empty($item['product_id'])) {
-                    Product::lockForUpdate()->find($item['product_id'])
-                        ?->decrement('quantity', $item['quantity']);
+                    $product = Product::lockForUpdate()->find($item['product_id']);
+                    if ($product) {
+                        $color    = $item['color'] ?? null;
+                        $size     = $item['size']  ?? null;
+                        $variants = is_array($product->variants) ? $product->variants : [];
+
+                        if ($color && $size) {
+                            $variants = array_map(function ($v) use ($color, $size, $item) {
+                                if (strtoupper($v['color']) === strtoupper($color)
+                                 && strtoupper($v['size'])  === strtoupper($size)) {
+                                    $v['quantity'] = max(0, (int)$v['quantity'] - (int)$item['quantity']);
+                                }
+                                return $v;
+                            }, $variants);
+                        }
+
+                        $newTotal = collect($variants)->sum('quantity');
+                        $product->update(['variants' => $variants, 'quantity' => $newTotal]);
+                    }
                 }
             }
         });
@@ -235,10 +272,14 @@ class OrderController extends Controller
         $stockErrors = DB::transaction(function () use ($order, $items) {
             $order->load('items');
 
+            // Build returning map per product+color+size
             $returning = [];
             foreach ($order->items as $oldItem) {
                 if ($oldItem->product_id) {
-                    $returning[$oldItem->product_id] = ($returning[$oldItem->product_id] ?? 0) + $oldItem->quantity;
+                    $key = $oldItem->product_id . '|' . strtoupper($oldItem->color ?? '') . '|' . strtoupper($oldItem->size ?? '');
+                    $returning[$key] = ($returning[$key] ?? 0) + $oldItem->quantity;
+                    // also track total per product for fallback
+                    $returning['total_' . $oldItem->product_id] = ($returning['total_' . $oldItem->product_id] ?? 0) + $oldItem->quantity;
                 }
             }
 
@@ -246,8 +287,26 @@ class OrderController extends Controller
             foreach ($items as $index => $item) {
                 if (!empty($item['product_id'])) {
                     $product = Product::lockForUpdate()->find($item['product_id']);
-                    if ($product) {
-                        $available = $product->quantity + ($returning[$product->id] ?? 0);
+                    if (!$product) continue;
+
+                    $color = $item['color'] ?? null;
+                    $size  = $item['size']  ?? null;
+
+                    if ($color && $size && is_array($product->variants)) {
+                        $variant = collect($product->variants)->first(
+                            fn($v) => strtoupper($v['color']) === strtoupper($color)
+                                   && strtoupper($v['size'])  === strtoupper($size)
+                        );
+                        $variantQty  = $variant ? (int)$variant['quantity'] : 0;
+                        $key         = $product->id . '|' . strtoupper($color) . '|' . strtoupper($size);
+                        $available   = $variantQty + ($returning[$key] ?? 0);
+                        if ($available < $item['quantity']) {
+                            $errors["items.{$index}.quantity"] = [
+                                "Only {$available} units of \"{$product->name}\" ({$color} / {$size}) will be available."
+                            ];
+                        }
+                    } else {
+                        $available = $product->quantity + ($returning['total_' . $product->id] ?? 0);
                         if ($available < $item['quantity']) {
                             $errors["items.{$index}.quantity"] = [
                                 "Only {$available} units of \"{$product->name}\" will be available."
@@ -267,8 +326,23 @@ class OrderController extends Controller
             $order->load('items');
             foreach ($order->items as $oldItem) {
                 if ($oldItem->product_id) {
-                    Product::lockForUpdate()->find($oldItem->product_id)
-                        ?->increment('quantity', $oldItem->quantity);
+                    $prod = Product::lockForUpdate()->find($oldItem->product_id);
+                    if ($prod) {
+                        $oldColor = $oldItem->color ?? null;
+                        $oldSize  = $oldItem->size  ?? null;
+                        $vars     = is_array($prod->variants) ? $prod->variants : [];
+                        if ($oldColor && $oldSize) {
+                            $vars = array_map(function ($v) use ($oldColor, $oldSize, $oldItem) {
+                                if (strtoupper($v['color']) === strtoupper($oldColor)
+                                 && strtoupper($v['size'])  === strtoupper($oldSize)) {
+                                    $v['quantity'] = (int)$v['quantity'] + (int)$oldItem->quantity;
+                                }
+                                return $v;
+                            }, $vars);
+                        }
+                        $newTotal = collect($vars)->sum('quantity');
+                        $prod->update(['variants' => $vars, 'quantity' => $newTotal]);
+                    }
                 }
             }
 
@@ -303,8 +377,25 @@ class OrderController extends Controller
                 ]);
 
                 if (!empty($item['product_id'])) {
-                    Product::lockForUpdate()->find($item['product_id'])
-                        ?->decrement('quantity', $item['quantity']);
+                    $product = Product::lockForUpdate()->find($item['product_id']);
+                    if ($product) {
+                        $color    = $item['color'] ?? null;
+                        $size     = $item['size']  ?? null;
+                        $variants = is_array($product->variants) ? $product->variants : [];
+
+                        if ($color && $size) {
+                            $variants = array_map(function ($v) use ($color, $size, $item) {
+                                if (strtoupper($v['color']) === strtoupper($color)
+                                 && strtoupper($v['size'])  === strtoupper($size)) {
+                                    $v['quantity'] = max(0, (int)$v['quantity'] - (int)$item['quantity']);
+                                }
+                                return $v;
+                            }, $variants);
+                        }
+
+                        $newTotal = collect($variants)->sum('quantity');
+                        $product->update(['variants' => $variants, 'quantity' => $newTotal]);
+                    }
                 }
             }
         });
@@ -321,8 +412,23 @@ class OrderController extends Controller
             $order->load('items');
             foreach ($order->items as $item) {
                 if ($item->product_id) {
-                    Product::lockForUpdate()->find($item->product_id)
-                        ?->increment('quantity', $item->quantity);
+                    $prod = Product::lockForUpdate()->find($item->product_id);
+                    if ($prod) {
+                        $dColor = $item->color ?? null;
+                        $dSize  = $item->size  ?? null;
+                        $vars   = is_array($prod->variants) ? $prod->variants : [];
+                        if ($dColor && $dSize) {
+                            $vars = array_map(function ($v) use ($dColor, $dSize, $item) {
+                                if (strtoupper($v['color']) === strtoupper($dColor)
+                                 && strtoupper($v['size'])  === strtoupper($dSize)) {
+                                    $v['quantity'] = (int)$v['quantity'] + (int)$item->quantity;
+                                }
+                                return $v;
+                            }, $vars);
+                        }
+                        $newTotal = collect($vars)->sum('quantity');
+                        $prod->update(['variants' => $vars, 'quantity' => $newTotal]);
+                    }
                 }
             }
             $order->delete();

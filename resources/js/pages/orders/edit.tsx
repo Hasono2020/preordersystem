@@ -153,10 +153,34 @@ export default function OrderEdit({ order, customers, areas }: any) {
         setProductResults(prev => ({ ...prev, [i]: results }));
     }
 
+    function getVariantStock(product: any, color: string, size: string): number {
+        const variants = product?.variants ?? [];
+        if (!color && !size) return product?.quantity ?? 0;
+        const v = variants.find((v: any) =>
+            v.color?.toUpperCase() === color?.toUpperCase() &&
+            v.size?.toUpperCase()  === size?.toUpperCase()
+        );
+        return v ? Number(v.quantity) : 0;
+    }
+
+    function availableSizesForColor(product: any, color: string): string[] {
+        const variants = product?.variants ?? [];
+        if (!variants.length) return product?.sizes ?? [];
+        return (product?.sizes ?? []).filter((s: string) =>
+            variants.some((v: any) =>
+                v.color?.toUpperCase() === color?.toUpperCase() &&
+                v.size?.toUpperCase()  === s.toUpperCase() &&
+                v.quantity > 0
+            )
+        );
+    }
+
     function selectProduct(i: number, product: any) {
-        const items        = [...data.items];
-        const defaultColor = product.colors?.length > 0 ? product.colors[0] : '';
-        const defaultSize  = product.sizes?.length  > 0 ? product.sizes[0]  : '';
+        const items    = [...data.items];
+        const variants = product.variants ?? [];
+        const firstAvail = variants.find((v: any) => v.quantity > 0);
+        const defaultColor = firstAvail?.color ?? (product.colors?.[0] ?? '');
+        const defaultSize  = firstAvail?.size  ?? (product.sizes?.[0]  ?? '');
         items[i] = {
             ...items[i],
             product_id:         product.id,
@@ -198,6 +222,18 @@ export default function OrderEdit({ order, customers, areas }: any) {
 
     function submit(e: React.FormEvent) {
         e.preventDefault();
+        // Block submit if any item has 0 stock for selected variant
+        for (let i = 0; i < data.items.length; i++) {
+            const item    = data.items[i];
+            const product = selectedProducts[i];
+            if (product?.variants?.length && item.color && item.size) {
+                const stock = getVariantStock(product, item.color, item.size);
+                if (stock <= 0) {
+                    alert(`"${item.product_name}" (${item.color} / ${item.size}) is out of stock. Please change or remove that item.`);
+                    return;
+                }
+            }
+        }
         patch(`/orders/${order.id}`);
     }
 
@@ -326,9 +362,25 @@ export default function OrderEdit({ order, customers, areas }: any) {
                                                 <td className="px-2 py-2 min-w-25">
                                                     {colors.length > 0 ? (
                                                         <select className="w-full rounded-md border px-2 py-2 text-sm bg-background"
-                                                            value={item.color} onChange={e => updateItem(i, 'color', e.target.value)}>
+                                                            value={item.color}
+                                                            onChange={e => {
+                                                                const newColor = e.target.value;
+                                                                updateItem(i, 'color', newColor);
+                                                                const avail = availableSizesForColor(matched, newColor);
+                                                                const nextSize = avail[0] ?? (matched?.sizes?.[0] ?? '');
+                                                                updateItem(i, 'size', nextSize);
+                                                            }}>
                                                             <option value="">Color</option>
-                                                            {colors.map((c: string) => <option key={c} value={c}>{c}</option>)}
+                                                            {colors.map((c: string) => {
+                                                                const hasStock = matched?.variants?.length
+                                                                    ? matched.variants.some((v: any) => v.color?.toUpperCase() === c.toUpperCase() && v.quantity > 0)
+                                                                    : true;
+                                                                return (
+                                                                    <option key={c} value={c}>
+                                                                        {c}{!hasStock ? ' (no stock)' : ''}
+                                                                    </option>
+                                                                );
+                                                            })}
                                                         </select>
                                                     ) : (
                                                         <Input value={item.color} onChange={e => updateItem(i, 'color', e.target.value)} placeholder="Color" />
@@ -341,7 +393,17 @@ export default function OrderEdit({ order, customers, areas }: any) {
                                                         <select className="w-full rounded-md border px-2 py-2 text-sm bg-background"
                                                             value={item.size} onChange={e => updateItem(i, 'size', e.target.value)}>
                                                             <option value="">Size</option>
-                                                            {sizes.map((s: string) => <option key={s} value={s}>{s}</option>)}
+                                                            {sizes.map((s: string) => {
+                                                                const variantStock = matched?.variants?.length
+                                                                    ? getVariantStock(matched, item.color, s)
+                                                                    : null;
+                                                                const outOfStock = variantStock !== null && variantStock <= 0;
+                                                                return (
+                                                                    <option key={s} value={s}>
+                                                                        {s}{outOfStock ? ' (no stock)' : variantStock !== null ? ` (${variantStock})` : ''}
+                                                                    </option>
+                                                                );
+                                                            })}
                                                         </select>
                                                     ) : (
                                                         <Input value={item.size} onChange={e => updateItem(i, 'size', e.target.value)} placeholder="Size" />
@@ -357,6 +419,17 @@ export default function OrderEdit({ order, customers, areas }: any) {
                                                         onBlur={e => { if (e.target.value === '' || Number(e.target.value) < 1) updateItem(i, 'quantity', 1); }}
                                                         className="w-16"
                                                     />
+                                                    {matched?.variants?.length > 0 && item.color && item.size && (() => {
+                                                        const stock = getVariantStock(matched, item.color, item.size);
+                                                        return (
+                                                            <span className={`text-xs mt-0.5 block font-medium ${
+                                                                stock <= 0 ? 'text-red-500' :
+                                                                stock < 5  ? 'text-amber-500' : 'text-green-600'
+                                                            }`}>
+                                                                {stock <= 0 ? '⚠ No stock — cannot order' : `${stock} left`}
+                                                            </span>
+                                                        );
+                                                    })()}
                                                 </td>
                                                 <td className="px-2 py-2">
                                                     <Input
