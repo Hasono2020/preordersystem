@@ -365,10 +365,12 @@ export default function OrderEdit({ order, customers, areas }: any) {
                                                             value={item.color}
                                                             onChange={e => {
                                                                 const newColor = e.target.value;
-                                                                updateItem(i, 'color', newColor);
-                                                                const avail = availableSizesForColor(matched, newColor);
+                                                                const avail    = availableSizesForColor(matched, newColor);
                                                                 const nextSize = avail[0] ?? (matched?.sizes?.[0] ?? '');
-                                                                updateItem(i, 'size', nextSize);
+                                                                // Update color + size atomically in one setData call
+                                                                const items = [...data.items];
+                                                                items[i] = { ...items[i], color: newColor, size: nextSize };
+                                                                setData('items', items);
                                                             }}>
                                                             <option value="">Color</option>
                                                             {colors.map((c: string) => {
