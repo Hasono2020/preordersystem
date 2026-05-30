@@ -3,15 +3,16 @@ import { NavUser } from '@/components/nav-user';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { type NavItem } from '@/types';
 import { Link, usePage } from '@inertiajs/react';
-import { LayoutGrid, ShoppingCart, BarChart2, UserCog, MapPin, Package, Upload, Tag } from 'lucide-react';
+import { LayoutGrid, ShoppingCart, BarChart2, UserCog, MapPin, Package, Upload, Tag, ClipboardList } from 'lucide-react';
 
 const getNavItems = (isAdmin: boolean): NavItem[] => {
     const items: NavItem[] = [
-        { title: 'Dashboard',      href: '/dashboard',      icon: LayoutGrid },
-        { title: 'Orders',         href: '/orders',         icon: ShoppingCart },
-        { title: 'Products',       href: '/products',       icon: Package },
-        { title: 'Shipping Areas', href: '/shipping-areas', icon: MapPin },
+        { title: 'Dashboard',       href: '/dashboard',      icon: LayoutGrid },
+        { title: 'Orders',          href: '/orders',         icon: ShoppingCart },
+        { title: 'Products',        href: '/products',       icon: Package },
+        { title: 'Shipping Areas',  href: '/shipping-areas', icon: MapPin },
         { title: 'Import / Export', href: '/import-export', icon: Upload },
+        { title: 'Summary',         href: '/summary', icon: ClipboardList },
     ];
     if (isAdmin) {
         items.push({ title: 'Reports',     href: '/reports',     icon: BarChart2 });

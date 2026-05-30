@@ -68,6 +68,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('import-export/preview', [ImportExportController::class, 'preview'])->name('import-export.preview');
     Route::post('import-export/confirm', [ImportExportController::class, 'import'])->name('import-export.confirm');
     Route::get('import-export/export',   [ImportExportController::class, 'export'])->name('import-export.export');
+
+    Route::get('summary', [\App\Http\Controllers\SummaryController::class, 'index'])
+    ->name('summary.index');
 });
 
 require __DIR__.'/settings.php';
