@@ -11,6 +11,7 @@ use App\Http\Controllers\ImportExportController;
 use App\Http\Controllers\PromoRuleController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\TripController;
+use App\Http\Controllers\PurchaseOrderController;
 
 Route::inertia('/', 'welcome')->name('home');
 
@@ -77,6 +78,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Trips
     Route::resource('trips', TripController::class);
     Route::post('trips/{trip}/close', [TripController::class, 'close'])->name('trips.close');
+
+    // Purchase Orders
+    Route::resource('purchases', PurchaseOrderController::class);
 
     });
 
