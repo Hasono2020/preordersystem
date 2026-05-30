@@ -13,7 +13,7 @@ class Order extends Model
         'customer_id', 'user_id', 'order_date', 'status',
         'discount', 'discount_product', 'discount_shipping', 'shipping_fee', 'shipping_fee_per_kg',
         'total_shipping_fee', 'down_payment', 'remaining_payment',
-        'courier', 'weight', 'total_price', 'notes',
+        'courier', 'weight', 'total_price', 'notes', 'trip_id',
     ];
 
     protected $casts = [
@@ -38,5 +38,10 @@ class Order extends Model
     public function payments()
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function trip()
+    {
+        return $this->belongsTo(Trip::class);
     }
 }

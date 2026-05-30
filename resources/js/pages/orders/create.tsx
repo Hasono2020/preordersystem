@@ -17,7 +17,7 @@ function noScroll(e: React.WheelEvent<HTMLInputElement>) {
     (e.target as HTMLInputElement).blur();
 }
 
-export default function OrderCreate({ customers, areas }: any) {
+export default function OrderCreate({ customers, areas, trips }: any) {
     const [customerMode, setCustomerMode]     = useState<'existing' | 'new'>('existing');
     const [customerSearch, setCustomerSearch] = useState('');
     const [showDropdown, setShowDropdown]     = useState(false);
@@ -44,6 +44,7 @@ export default function OrderCreate({ customers, areas }: any) {
         notes:                '',
         area_id:              '',
         items:                [{ ...emptyItem }],
+        trip_id:              '',
     });
 
     const [productSearch, setProductSearch]       = useState<Record<number, string>>({});
@@ -464,6 +465,21 @@ export default function OrderCreate({ customers, areas }: any) {
                         <div className="space-y-1 col-span-2">
                             <Label>Courier</Label>
                             <Input value={data.courier} onChange={e => setData('courier', e.target.value)} placeholder="e.g. JNE, J&T" />
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                            <Label>Trip / Buying Session</Label>
+                            <select
+                                className="w-full rounded-md border px-3 py-2 text-sm bg-background"
+                                value={data.trip_id}
+                                onChange={e => setData('trip_id', e.target.value)}
+                            >
+                                <option value="">— No trip (walk-in) —</option>
+                                {trips.map((t: any) => (
+                                    <option key={t.id} value={t.id}>
+                                        {t.name} {t.location ? `(${t.location})` : ''}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                     </div>
 

@@ -52,13 +52,14 @@ class OrderController extends Controller
 
     public function create()
     {
-        // FIX: include promo_type so the frontend can correctly resolve
-        // customer type for promo rule matching (reseller_promo customers
-        // must match reseller rules, not normal rules).
         $customers = Customer::with('area')->orderBy('name')
             ->get(['id', 'name', 'phone', 'area_id', 'type', 'promo_type']);
-        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
-        return Inertia::render('orders/create', compact('customers', 'areas'));
+        $areas = ShippingArea::orderBy('name')
+            ->get(['id', 'name', 'price_per_kg']);
+        $trips = \App\Models\Trip::where('status', 'active')->orderBy('name')
+            ->get(['id', 'name', 'location']);
+
+        return Inertia::render('orders/create', compact('customers', 'areas', 'trips'));
     }
 
     public function store(Request $request)
@@ -71,6 +72,7 @@ class OrderController extends Controller
                 'new_customer_area_id'    => 'nullable|exists:shipping_areas,id',
                 'new_customer_type'       => 'nullable|in:normal,reseller',
                 'new_customer_promo_type' => 'nullable|in:default,reseller_promo',
+                'trip_id'                 => 'nullable|exists:trips,id',
             ]);
         } else {
             $request->validate(['customer_id' => 'required|exists:customers,id']);
@@ -94,6 +96,7 @@ class OrderController extends Controller
             'items.*.size'         => 'nullable|string|max:50',
             'items.*.quantity'     => 'required|integer|min:1',
             'items.*.price'        => 'required|numeric|min:0',
+            'trip_id'              => 'nullable|exists:trips,id',
         ]);
 
         $items         = $request->input('items');
@@ -175,6 +178,7 @@ class OrderController extends Controller
                 'courier'             => $request->input('courier'),
                 'notes'               => $request->input('notes'),
                 'total_price'         => $totalPrice,
+                'trip_id'             => $request->input('trip_id'),
             ]);
 
             foreach ($items as $item) {
@@ -232,8 +236,12 @@ class OrderController extends Controller
         $order->load(['items.product', 'customer']);
         $customers = Customer::with('area')->orderBy('name')
             ->get(['id', 'name', 'phone', 'area_id', 'type', 'promo_type']);
-        $areas = ShippingArea::orderBy('name')->get(['id', 'name', 'price_per_kg']);
-        return Inertia::render('orders/edit', compact('order', 'customers', 'areas'));
+        $areas = ShippingArea::orderBy('name')
+            ->get(['id', 'name', 'price_per_kg']);
+        $trips = \App\Models\Trip::where('status', 'active')->orderBy('name')
+            ->get(['id', 'name', 'location']);
+
+        return Inertia::render('orders/edit', compact('order', 'customers', 'areas', 'trips'));
     }
 
     public function update(Request $request, Order $order)
@@ -362,6 +370,7 @@ class OrderController extends Controller
                 'courier'             => $request->input('courier'),
                 'notes'               => $request->input('notes'),
                 'total_price'         => $totalPrice,
+                'trip_id'             => $request->input('trip_id') ?: null,
             ]);
 
             $order->items()->delete();

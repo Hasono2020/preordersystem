@@ -1,5 +1,5 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import { ChevronDown, ChevronRight, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -87,9 +87,8 @@ export default function SummaryIndex({ grouped, summary, status }: any) {
                                     const key = `${row.product_name}||${row.color}||${row.size}`;
                                     const isOpen = !!expanded[key];
                                     return (
-                                        <>
+                                        <Fragment key={key}>
                                             <tr
-                                                key={key}
                                                 className={`border-b cursor-pointer hover:bg-muted/30 transition-colors ${idx % 2 === 0 ? '' : 'bg-muted/10'}`}
                                                 onClick={() => toggleRow(key)}
                                             >
@@ -138,7 +137,7 @@ export default function SummaryIndex({ grouped, summary, status }: any) {
                                                         {Number(c.price * c.quantity).toLocaleString()}
                                                     </td>
                                                     <td className="px-4 py-2 text-right">
-                                                        
+                                                        <a
                                                             href={`/orders/${c.order_id}`}
                                                             className="text-xs text-primary hover:underline"
                                                             onClick={e => e.stopPropagation()}
@@ -148,7 +147,7 @@ export default function SummaryIndex({ grouped, summary, status }: any) {
                                                     </td>
                                                 </tr>
                                             ))}
-                                        </>
+                                        </Fragment>
                                     );
                                 })}
                             </tbody>

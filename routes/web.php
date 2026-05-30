@@ -10,6 +10,7 @@ use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ImportExportController;
 use App\Http\Controllers\PromoRuleController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\TripController;
 
 Route::inertia('/', 'welcome')->name('home');
 
@@ -69,8 +70,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('import-export/confirm', [ImportExportController::class, 'import'])->name('import-export.confirm');
     Route::get('import-export/export',   [ImportExportController::class, 'export'])->name('import-export.export');
 
+    // Summary
     Route::get('summary', [\App\Http\Controllers\SummaryController::class, 'index'])
     ->name('summary.index');
-});
+
+    // Trips
+    Route::resource('trips', TripController::class);
+    Route::post('trips/{trip}/close', [TripController::class, 'close'])->name('trips.close');
+
+    });
 
 require __DIR__.'/settings.php';

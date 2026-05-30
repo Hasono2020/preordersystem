@@ -22,6 +22,7 @@ export default function OrderEdit({ order, customers, areas }: any) {
         order_date:          order.order_date,
         status:              order.status,
         discount:            Number(order.discount),
+        trip_id:             order.trip_id ? String(order.trip_id) : '',
         discount_product:    Number(order.discount_product  ?? 0),
         discount_shipping:   Number(order.discount_shipping ?? 0),
         shipping_fee_per_kg: Number(order.shipping_fee_per_kg),
