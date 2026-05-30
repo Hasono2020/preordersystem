@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Trip;
-use App\Models\Order;
 use App\Models\OrderItem;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
