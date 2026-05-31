@@ -10,8 +10,8 @@ export default function PurchaseAllocate({ purchase, allocationData }: any) {
         setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
     }
 
-    function confirm() {
-        if (confirm(
+    function handleAllocate() {
+        if (window.confirm(
             'Apply stock allocation?\n\n' +
             '• Customers who get stock → status changed to BOUGHT\n' +
             '• Customers who don\'t get stock → status changed to SOLD OUT\n\n' +
@@ -164,7 +164,7 @@ export default function PurchaseAllocate({ purchase, allocationData }: any) {
                 {allocationData.length > 0 && (
                     <div className="flex gap-3 items-center">
                         <Button
-                            onClick={confirm}
+                            onClick={handleAllocate}
                             className="bg-blue-600 hover:bg-blue-700"
                         >
                             ⚖️ Apply Allocation — Update {affectedCustomers} Orders
