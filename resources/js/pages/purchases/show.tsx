@@ -29,6 +29,11 @@ export default function PurchaseShow({ purchase }: any) {
                         </p>
                     </div>
                     <div className="flex gap-2">
+                        <Link href={`/purchases/${purchase.id}/allocate`}>
+                            <Button variant="default" size="sm" className="bg-blue-600 hover:bg-blue-700">
+                                ⚖️ Allocate Stock
+                            </Button>
+                        </Link>
                         <Link href={`/purchases/${purchase.id}/edit`}>
                             <Button variant="outline" size="sm"><Pencil className="size-4 mr-1" /> Edit</Button>
                         </Link>
@@ -43,7 +48,7 @@ export default function PurchaseShow({ purchase }: any) {
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-1">
                         <p className="font-semibold text-amber-800 text-sm">⚠ Shortfall detected — {shortfall.length} item(s) received less than ordered</p>
                         <p className="text-xs text-amber-700">
-                            Go to <Link href="/purchases/{purchase.id}/allocate" className="underline">Stock Allocation</Link> to assign available stock to customers.
+                            Go to <Link href={`/purchases/${purchase.id}/allocate`} className="underline">Stock Allocation</Link> to assign available stock to customers.
                         </p>
                     </div>
                 )}

@@ -82,6 +82,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Purchase Orders
     Route::resource('purchases', PurchaseOrderController::class);
 
+    // Stock Allocation
+    Route::get('purchases/{purchase}/allocate',  [\App\Http\Controllers\AllocationController::class, 'show'])->name('allocation.show');
+    Route::post('purchases/{purchase}/allocate', [\App\Http\Controllers\AllocationController::class, 'allocate'])->name('allocation.allocate');
+
     });
 
 require __DIR__.'/settings.php';
