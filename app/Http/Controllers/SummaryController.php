@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\OrderItem;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class SummaryController extends Controller
@@ -12,42 +13,80 @@ class SummaryController extends Controller
     {
         $status = $request->status ?? 'keep';
 
-        // Get all order items from orders with the selected status
-        // Group by product_name + color + size
-        $items = OrderItem::with(['order.customer'])
-            ->whereHas('order', fn($q) => $q->where('status', $status))
+        // FIX 2: Use database-level aggregation instead of loading all rows
+        // into PHP memory. groupBy + sum in SQL is far more efficient at scale.
+        $rows = OrderItem::query()
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->where('orders.status', $status)
+            ->select([
+                'order_items.product_name',
+                DB::raw('COALESCE(NULLIF(order_items.color, ""), "—") as color'),
+                DB::raw('COALESCE(NULLIF(order_items.size, ""),  "—") as size'),
+                DB::raw('SUM(order_items.quantity)    as total_qty'),
+                DB::raw('SUM(order_items.total_price) as total_value'),
+            ])
+            ->groupBy('order_items.product_name', 'order_items.color', 'order_items.size')
+            ->orderBy('order_items.product_name')
             ->get();
 
-        // Group and aggregate
-        $grouped = $items->groupBy(function ($item) {
-            return $item->product_name . '||' . ($item->color ?? '') . '||' . ($item->size ?? '');
-        })->map(function ($group) {
-            $first = $group->first();
+        // Load customer details per product group as a second targeted query
+        // rather than loading every item row.
+        $customerRows = OrderItem::query()
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->join('customers', 'customers.id', '=', 'orders.customer_id')
+            ->where('orders.status', $status)
+            ->select([
+                'order_items.product_name',
+                'order_items.color',
+                'order_items.size',
+                'order_items.order_id',
+                'order_items.quantity',
+                'order_items.price',
+                'orders.order_date',
+                'customers.name as customer_name',
+            ])
+            ->orderBy('orders.order_date')
+            ->get()
+            ->groupBy(fn($r) =>
+                $r->product_name . '||' . ($r->color ?? '') . '||' . ($r->size ?? '')
+            );
+
+        $grouped = $rows->map(function ($row) use ($customerRows) {
+            $key       = $row->product_name . '||' .
+                         ($row->color === '—' ? '' : $row->color) . '||' .
+                         ($row->size  === '—' ? '' : $row->size);
+            $customers = ($customerRows[$key] ?? collect())->map(fn($r) => [
+                'name'       => $r->customer_name,
+                'order_id'   => $r->order_id,
+                'order_date' => $r->order_date,
+                'quantity'   => $r->quantity,
+                'price'      => $r->price,
+            ])->values();
+
             return [
-                'product_name' => $first->product_name,
-                'color'        => $first->color ?? '—',
-                'size'         => $first->size  ?? '—',
-                'total_qty'    => $group->sum('quantity'),
-                'total_value'  => $group->sum('total_price'),
-                'customers'    => $group->map(fn($i) => [
-                    'name'       => $i->order->customer->name ?? 'Unknown',
-                    'order_id'   => $i->order_id,
-                    'order_date' => $i->order->order_date,
-                    'quantity'   => $i->quantity,
-                    'price'      => $i->price,
-                ])->values(),
+                'product_name' => $row->product_name,
+                'color'        => $row->color,
+                'size'         => $row->size,
+                'total_qty'    => (int) $row->total_qty,
+                'total_value'  => (float) $row->total_value,
+                'customers'    => $customers,
             ];
-        })->values()->sortBy('product_name')->values();
+        });
 
         $summary = [
-            'total_items'    => $grouped->sum('total_qty'),
-            'total_value'    => $grouped->sum('total_value'),
-            'total_products' => $grouped->count(),
-            'total_customers'=> $items->pluck('order.customer_id')->unique()->count(),
+            'total_items'     => $grouped->sum('total_qty'),
+            'total_value'     => $grouped->sum('total_value'),
+            'total_products'  => $grouped->count(),
+            'total_customers' => OrderItem::query()
+                ->join('orders', 'orders.id', '=', 'order_items.order_id')
+                ->where('orders.status', $status)
+                ->join('customers', 'customers.id', '=', 'orders.customer_id')
+                ->distinct('customers.id')
+                ->count('customers.id'),
         ];
 
         return Inertia::render('summary/index', [
-            'grouped' => $grouped,
+            'grouped' => $grouped->values(),
             'summary' => $summary,
             'status'  => $status,
         ]);

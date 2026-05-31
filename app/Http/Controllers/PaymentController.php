@@ -16,7 +16,6 @@ class PaymentController extends Controller
             'note'    => 'nullable|string|max:255',
         ]);
 
-        // Guard: don't allow overpayment
         if ($request->amount > $order->remaining_payment) {
             return back()->withErrors([
                 'amount' => 'Payment amount exceeds the remaining balance of ' .
@@ -32,12 +31,12 @@ class PaymentController extends Controller
             'note'     => $request->note,
         ]);
 
-        // Recalculate remaining_payment from payments only (down_payment is separate)
-        // The payments table stores *subsequent* payments only, not the initial down_payment.
-        $totalSubsequent      = $order->payments()->sum('amount');
-        $remaining            = max($order->total_price - $order->down_payment - $totalSubsequent, 0);
-        $order->remaining_payment = $remaining;
-        $order->save();
+        $totalSubsequent = $order->payments()->sum('amount');
+        $remaining       = max($order->total_price - $order->down_payment - $totalSubsequent, 0);
+
+        // FIX 8: Use update() instead of direct property assignment so model
+        // events and observers fire consistently with the rest of the codebase.
+        $order->update(['remaining_payment' => $remaining]);
 
         return redirect()->route('orders.show', $order->id)
             ->with('success', 'Payment recorded successfully.');
@@ -45,18 +44,17 @@ class PaymentController extends Controller
 
     public function destroy(Order $order, Payment $payment)
     {
-        // FIX: Ensure the payment actually belongs to this order
         if ($payment->order_id !== $order->id) {
             abort(403, 'This payment does not belong to this order.');
         }
 
         $payment->delete();
 
-        // Recalculate remaining_payment
-        $totalSubsequent      = $order->payments()->sum('amount');
-        $remaining            = max($order->total_price - $order->down_payment - $totalSubsequent, 0);
-        $order->remaining_payment = $remaining;
-        $order->save();
+        $totalSubsequent = $order->payments()->sum('amount');
+        $remaining       = max($order->total_price - $order->down_payment - $totalSubsequent, 0);
+
+        // FIX 8: Same — use update() for consistency.
+        $order->update(['remaining_payment' => $remaining]);
 
         return redirect()->route('orders.show', $order->id)
             ->with('success', 'Payment removed.');

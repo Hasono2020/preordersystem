@@ -24,11 +24,10 @@ class PurchaseOrderController extends Controller
 
     public function create(Request $request)
     {
-        $trips    = Trip::orderBy('name')->get(['id', 'name', 'location']);
-        $tripId   = $request->trip_id;
+        $trips     = Trip::orderBy('name')->get(['id', 'name', 'location']);
+        $tripId    = $request->trip_id;
         $suggested = [];
 
-        // If trip selected, pre-fill from keep orders
         if ($tripId) {
             $keepItems = OrderItem::with(['order.customer'])
                 ->whereHas('order', fn($q) =>
@@ -59,12 +58,12 @@ class PurchaseOrderController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'trip_id'         => 'nullable|exists:trips,id',
-            'supplier_name'   => 'nullable|string|max:255',
-            'purchase_date'   => 'required|date',
-            'status'          => 'required|in:draft,confirmed',
-            'notes'           => 'nullable|string',
-            'items'           => 'required|array|min:1',
+            'trip_id'              => 'nullable|exists:trips,id',
+            'supplier_name'        => 'nullable|string|max:255',
+            'purchase_date'        => 'required|date',
+            'status'               => 'required|in:draft,confirmed',
+            'notes'                => 'nullable|string',
+            'items'                => 'required|array|min:1',
             'items.*.product_name' => 'required|string|max:255',
             'items.*.color'        => 'nullable|string|max:100',
             'items.*.size'         => 'nullable|string|max:50',
@@ -123,12 +122,12 @@ class PurchaseOrderController extends Controller
     public function update(Request $request, PurchaseOrder $purchase)
     {
         $request->validate([
-            'trip_id'         => 'nullable|exists:trips,id',
-            'supplier_name'   => 'nullable|string|max:255',
-            'purchase_date'   => 'required|date',
-            'status'          => 'required|in:draft,confirmed',
-            'notes'           => 'nullable|string',
-            'items'           => 'required|array|min:1',
+            'trip_id'              => 'nullable|exists:trips,id',
+            'supplier_name'        => 'nullable|string|max:255',
+            'purchase_date'        => 'required|date',
+            'status'               => 'required|in:draft,confirmed',
+            'notes'                => 'nullable|string',
+            'items'                => 'required|array|min:1',
             'items.*.product_name' => 'required|string|max:255',
             'items.*.color'        => 'nullable|string|max:100',
             'items.*.size'         => 'nullable|string|max:50',
@@ -173,7 +172,20 @@ class PurchaseOrderController extends Controller
 
     public function destroy(PurchaseOrder $purchase)
     {
+        // FIX 3: Block deletion of confirmed purchase orders.
+        // Deleting a confirmed PO would orphan orders that were already
+        // allocated and marked as bought/sold_out during allocation.
+        if ($purchase->status === 'confirmed') {
+            return redirect()->route('purchases.index')
+                ->with('error',
+                    "Cannot delete \"{$purchase->supplier_name}\" PO — " .
+                    "it has already been confirmed and stock allocated. " .
+                    "Edit it instead if corrections are needed."
+                );
+        }
+
         $purchase->delete();
+
         return redirect()->route('purchases.index')
             ->with('success', 'Purchase order deleted.');
     }

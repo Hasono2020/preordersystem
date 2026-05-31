@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Trip;
 use App\Models\OrderItem;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class TripController extends Controller
@@ -42,38 +43,72 @@ class TripController extends Controller
 
     public function show(Trip $trip)
     {
-        $trip->load(['orders.customer', 'orders.items']);
+        $trip->loadCount('orders')
+             ->loadSum('orders', 'total_price');
 
-        // Product summary for this trip (keep orders only)
-        $keepItems = OrderItem::with(['order.customer'])
-            ->whereHas('order', fn($q) => $q->where('trip_id', $trip->id)->where('status', 'keep'))
+        // FIX 2: Use database-level aggregation instead of loading all order
+        // items into PHP memory and grouping in PHP.
+        $productRows = OrderItem::query()
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->where('orders.trip_id', $trip->id)
+            ->where('orders.status', 'keep')
+            ->select([
+                'order_items.product_name',
+                DB::raw('COALESCE(NULLIF(order_items.color, ""), "—") as color'),
+                DB::raw('COALESCE(NULLIF(order_items.size,  ""), "—") as size'),
+                DB::raw('SUM(order_items.quantity)    as total_qty'),
+                DB::raw('SUM(order_items.total_price) as total_value'),
+            ])
+            ->groupBy('order_items.product_name', 'order_items.color', 'order_items.size')
+            ->orderBy('order_items.product_name')
             ->get();
 
-        $productSummary = $keepItems->groupBy(function ($item) {
-            return $item->product_name . '||' . ($item->color ?? '') . '||' . ($item->size ?? '');
-        })->map(function ($group) {
-            $first = $group->first();
+        $customerRows = OrderItem::query()
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->join('customers', 'customers.id', '=', 'orders.customer_id')
+            ->where('orders.trip_id', $trip->id)
+            ->where('orders.status', 'keep')
+            ->select([
+                'order_items.product_name',
+                'order_items.color',
+                'order_items.size',
+                'order_items.order_id',
+                'order_items.quantity',
+                'customers.name as customer_name',
+            ])
+            ->orderBy('orders.order_date')
+            ->get()
+            ->groupBy(fn($r) =>
+                $r->product_name . '||' . ($r->color ?? '') . '||' . ($r->size ?? '')
+            );
+
+        $productSummary = $productRows->map(function ($row) use ($customerRows) {
+            $key       = $row->product_name . '||' .
+                         ($row->color === '—' ? '' : $row->color) . '||' .
+                         ($row->size  === '—' ? '' : $row->size);
+            $customers = ($customerRows[$key] ?? collect())->map(fn($r) => [
+                'name'     => $r->customer_name,
+                'order_id' => $r->order_id,
+                'quantity' => $r->quantity,
+            ])->values();
+
             return [
-                'product_name' => $first->product_name,
-                'color'        => $first->color ?? '—',
-                'size'         => $first->size  ?? '—',
-                'total_qty'    => $group->sum('quantity'),
-                'total_value'  => $group->sum('total_price'),
-                'customers'    => $group->map(fn($i) => [
-                    'name'     => $i->order->customer->name ?? 'Unknown',
-                    'order_id' => $i->order_id,
-                    'quantity' => $i->quantity,
-                ])->values(),
+                'product_name' => $row->product_name,
+                'color'        => $row->color,
+                'size'         => $row->size,
+                'total_qty'    => (int) $row->total_qty,
+                'total_value'  => (float) $row->total_value,
+                'customers'    => $customers,
             ];
-        })->values()->sortBy('product_name')->values();
+        })->values();
 
         $stats = [
-            'total_orders'   => $trip->orders->count(),
-            'keep_orders'    => $trip->orders->where('status', 'keep')->count(),
-            'bought_orders'  => $trip->orders->where('status', 'bought')->count(),
-            'soldout_orders' => $trip->orders->where('status', 'sold_out')->count(),
-            'total_value'    => $trip->orders->sum('total_price'),
-            'total_remaining'=> $trip->orders->sum('remaining_payment'),
+            'total_orders'    => $trip->orders_count,
+            'keep_orders'     => $trip->orders()->where('status', 'keep')->count(),
+            'bought_orders'   => $trip->orders()->where('status', 'bought')->count(),
+            'soldout_orders'  => $trip->orders()->where('status', 'sold_out')->count(),
+            'total_value'     => $trip->orders_sum_total_price ?? 0,
+            'total_remaining' => $trip->orders()->sum('remaining_payment'),
         ];
 
         return Inertia::render('trips/show', compact('trip', 'productSummary', 'stats'));

@@ -14,51 +14,51 @@ class AllocationController extends Controller
     {
         $purchase->load(['trip', 'items']);
 
-        // For each purchase item, find matching keep orders
         $allocationData = $purchase->items->map(function ($poItem) use ($purchase) {
 
-            // Find all keep orders with matching product+color+size
-            // in the same trip, sorted by order date (first come first served)
+            // FIX 1: Replaced orderBy(closure) which is unsupported in Laravel
+            // with a proper join + orderBy, matching what allocate() already does.
             $keepItems = OrderItem::with(['order.customer'])
-                ->where('product_name', $poItem->product_name)
+                ->where('order_items.product_name', $poItem->product_name)
                 ->where(fn($q) => $poItem->color
-                    ? $q->where('color', $poItem->color)
-                    : $q->whereNull('color')->orWhere('color', ''))
+                    ? $q->where('order_items.color', $poItem->color)
+                    : $q->whereNull('order_items.color')->orWhere('order_items.color', ''))
                 ->where(fn($q) => $poItem->size
-                    ? $q->where('size', $poItem->size)
-                    : $q->whereNull('size')->orWhere('size', ''))
+                    ? $q->where('order_items.size', $poItem->size)
+                    : $q->whereNull('order_items.size')->orWhere('order_items.size', ''))
                 ->whereHas('order', fn($q) => $q
                     ->where('status', 'keep')
                     ->when($purchase->trip_id, fn($q2) =>
                         $q2->where('trip_id', $purchase->trip_id)
                     )
                 )
-                ->orderBy(fn($q) => $q->select('order_date')
-                    ->from('orders')
-                    ->whereColumn('orders.id', 'order_items.order_id')
-                    ->limit(1)
-                )
+                ->join('orders', 'orders.id', '=', 'order_items.order_id')
+                ->orderBy('orders.order_date', 'asc')
+                ->orderBy('orders.id', 'asc')
+                ->select('order_items.*')
                 ->get();
 
-            $totalOrdered  = $keepItems->sum('quantity');
-            $qtyAvailable  = $poItem->qty_received;
-            $qtyShortfall  = max(0, $totalOrdered - $qtyAvailable);
+            $totalOrdered = $keepItems->sum('quantity');
+            $qtyAvailable = $poItem->qty_received;
+            $qtyShortfall = max(0, $totalOrdered - $qtyAvailable);
 
-            // Simulate allocation — first come first served
-            $remaining    = $qtyAvailable;
-            $allocations  = $keepItems->map(function ($item) use (&$remaining) {
-                $allocated  = min($item->quantity, $remaining);
-                $remaining  = max(0, $remaining - $item->quantity);
+            $remaining   = $qtyAvailable;
+            $allocations = $keepItems->map(function ($item) use (&$remaining) {
+                $allocated = min($item->quantity, $remaining);
+                $remaining = max(0, $remaining - $item->quantity);
                 return [
-                    'order_item_id'  => $item->id,
-                    'order_id'       => $item->order_id,
-                    'customer_name'  => $item->order->customer->name ?? 'Unknown',
-                    'order_date'     => $item->order->order_date,
-                    'qty_requested'  => $item->quantity,
-                    'qty_allocated'  => $allocated,
-                    'qty_shortfall'  => $item->quantity - $allocated,
-                    'will_get'       => $allocated > 0,
-                    'fully_filled'   => $allocated >= $item->quantity,
+                    'order_item_id' => $item->id,
+                    'order_id'      => $item->order_id,
+                    'customer_name' => $item->order->customer->name ?? 'Unknown',
+                    'order_date'    => $item->order->order_date,
+                    'qty_requested' => $item->quantity,
+                    'qty_allocated' => $allocated,
+                    'qty_shortfall' => $item->quantity - $allocated,
+                    'will_get'      => $allocated > 0,
+                    'fully_filled'  => $allocated >= $item->quantity,
+                    // FIX 6: Expose partial allocation so the frontend can
+                    // show customers who will get less than they requested.
+                    'is_partial'    => $allocated > 0 && $allocated < $item->quantity,
                 ];
             });
 
@@ -88,15 +88,14 @@ class AllocationController extends Controller
         DB::transaction(function () use ($purchase) {
             foreach ($purchase->items as $poItem) {
 
-                // Find matching keep order items sorted by order date
                 $keepItems = OrderItem::with('order')
-                    ->where('product_name', $poItem->product_name)
+                    ->where('order_items.product_name', $poItem->product_name)
                     ->where(fn($q) => $poItem->color
-                        ? $q->where('color', $poItem->color)
-                        : $q->whereNull('color')->orWhere('color', ''))
+                        ? $q->where('order_items.color', $poItem->color)
+                        : $q->whereNull('order_items.color')->orWhere('order_items.color', ''))
                     ->where(fn($q) => $poItem->size
-                        ? $q->where('size', $poItem->size)
-                        : $q->whereNull('size')->orWhere('size', ''))
+                        ? $q->where('order_items.size', $poItem->size)
+                        : $q->whereNull('order_items.size')->orWhere('order_items.size', ''))
                     ->whereHas('order', fn($q) => $q
                         ->where('status', 'keep')
                         ->when($purchase->trip_id, fn($q2) =>
@@ -122,15 +121,27 @@ class AllocationController extends Controller
                         $remaining -= $item->quantity;
                         $order->update(['status' => 'bought']);
                     } else {
-                        // Partial — this customer gets some but not all
-                        // For simplicity: if they can't get full qty, mark sold out
-                        // (you can change this to allow partial if needed)
-                        $order->update(['status' => 'sold_out']);
+                        // FIX 6: Partial allocation — record how many were
+                        // actually received by updating the order item quantity,
+                        // then mark the order as bought with a note instead of
+                        // silently discarding the partial stock.
+                        $item->update([
+                            'quantity'    => $remaining,
+                            'total_price' => $remaining * $item->price,
+                        ]);
+
+                        $existingNote = $order->notes ? $order->notes . "\n" : '';
+                        $order->update([
+                            'status' => 'bought',
+                            'notes'  => $existingNote .
+                                "Partial delivery: received {$remaining} of {$item->quantity} originally ordered.",
+                        ]);
+
+                        $remaining = 0;
                     }
                 }
             }
 
-            // Mark purchase as confirmed
             $purchase->update(['status' => 'confirmed']);
         });
 

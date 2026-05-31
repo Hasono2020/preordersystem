@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use App\Models\PurchaseOrder;
 
 class PurchaseOrderItem extends Model
 {
@@ -18,6 +17,8 @@ class PurchaseOrderItem extends Model
 
     public function purchaseOrder()
     {
+        // FIX 5: Removed unused `use App\Models\PurchaseOrder` import.
+        // Laravel resolves belongsTo by convention, no import needed.
         return $this->belongsTo(PurchaseOrder::class);
     }
 
