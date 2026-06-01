@@ -134,9 +134,19 @@ export default function OrdersIndex({ orders, filters }: any) {
                                     </td>
                                     <td className="px-4 py-3 font-medium">{o.customer?.name}</td>
                                     <td className="px-4 py-3">
-                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[o.status]}`}>
-                                            {STATUS_LABELS[o.status]}
-                                        </span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {(() => {
+                                                const counts: Record<string, number> = {};
+                                                (o.items ?? []).forEach((item: any) => {
+                                                    counts[item.status] = (counts[item.status] ?? 0) + 1;
+                                                });
+                                                return Object.entries(counts).map(([status, count]) => (
+                                                    <span key={status} className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[status] ?? ''}`}>
+                                                        {STATUS_LABELS[status] ?? status}{count > 1 ? ` ×${count}` : ''}
+                                                    </span>
+                                                ));
+                                            })()}
+                                        </div>
                                     </td>
                                     <td className="px-4 py-3 text-muted-foreground">{o.courier ?? '—'}</td>
                                     <td className="px-4 py-3 text-right">

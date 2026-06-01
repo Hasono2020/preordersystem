@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus, Trash2 } from 'lucide-react';
 
-const emptyItem = { product_id: null, product_name: '', color: '', size: '', quantity: 1, price: 0, weight: 0, exclude_from_promo: false };
+const emptyItem = { product_id: null, product_name: '', color: '', size: '', quantity: 1, price: 0, weight: 0, exclude_from_promo: false, status: 'keep' };
 
 function calcKg(totalGrams: number): number {
     if (totalGrams <= 0) return 0;
@@ -20,7 +20,6 @@ export default function OrderEdit({ order, customers, areas }: any) {
     const { data, setData, patch, processing, errors } = useForm({
         customer_id:         String(order.customer_id),
         order_date:          order.order_date,
-        status:              order.status,
         discount:            Number(order.discount),
         trip_id:             order.trip_id ? String(order.trip_id) : '',
         discount_product:    Number(order.discount_product  ?? 0),
@@ -43,6 +42,7 @@ export default function OrderEdit({ order, customers, areas }: any) {
             // FIX: read exclude_from_promo from the eager-loaded product
             // (items.product is now loaded by the controller).
             exclude_from_promo: i.product?.exclude_from_promo ?? false,
+            status:             i.status ?? 'keep',
         })),
     });
 
@@ -271,15 +271,6 @@ export default function OrderEdit({ order, customers, areas }: any) {
                             <Input type="date" value={data.order_date} onChange={e => setData('order_date', e.target.value)} />
                         </div>
                         <div className="space-y-1">
-                            <Label>Status *</Label>
-                            <select className="w-full rounded-md border px-3 py-2 text-sm bg-background"
-                                value={data.status} onChange={e => setData('status', e.target.value)}>
-                                <option value="bought">Bought</option>
-                                <option value="keep">Keep</option>
-                                <option value="sold_out">Sold Out</option>
-                            </select>
-                        </div>
-                        <div className="space-y-1">
                             <Label>Courier</Label>
                             <Input value={data.courier} onChange={e => setData('courier', e.target.value)} placeholder="e.g. JNE, J&T" />
                         </div>
@@ -302,6 +293,7 @@ export default function OrderEdit({ order, customers, areas }: any) {
                                         <th className="text-left px-3 py-2 w-28">Size</th>
                                         <th className="text-left px-3 py-2">Qty</th>
                                         <th className="text-left px-3 py-2">Price</th>
+                                        <th className="text-left px-3 py-2 w-28">Status</th>
                                         <th className="text-right px-3 py-2">Total</th>
                                         <th className="px-3 py-2"></th>
                                     </tr>
@@ -432,6 +424,17 @@ export default function OrderEdit({ order, customers, areas }: any) {
                                                         onChange={e => updateItem(i, 'price', parseFloat(e.target.value) || 0)}
                                                         className="w-28"
                                                     />
+                                                </td>
+                                                <td className="px-2 py-2">
+                                                    <select
+                                                        className="w-full rounded-md border px-2 py-1.5 text-sm bg-background"
+                                                        value={item.status}
+                                                        onChange={e => updateItem(i, 'status', e.target.value)}
+                                                    >
+                                                        <option value="keep">Keep</option>
+                                                        <option value="bought">Bought</option>
+                                                        <option value="sold_out">Sold Out</option>
+                                                    </select>
                                                 </td>
                                                 <td className="px-3 py-2 text-right font-medium whitespace-nowrap">
                                                     {(Number(item.quantity) * Number(item.price)).toLocaleString()}

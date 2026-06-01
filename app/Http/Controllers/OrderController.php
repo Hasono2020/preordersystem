@@ -22,6 +22,21 @@ class OrderController extends Controller
         }
     }
 
+
+    /**
+     * Derive order-level status from item statuses.
+     * bought = all items bought
+     * sold_out = at least one sold_out (and not all bought)
+     * keep = anything else
+     */
+    private function deriveOrderStatus(array $items): string
+    {
+        $statuses = array_column($items, 'status');
+        if (count(array_unique($statuses)) === 1 && $statuses[0] === 'bought') return 'bought';
+        if (in_array('sold_out', $statuses)) return 'sold_out';
+        return 'keep';
+    }
+
     public function index(Request $request)
     {
         $orders = Order::with(['customer', 'user', 'items'])
@@ -96,6 +111,7 @@ class OrderController extends Controller
             'items.*.size'         => 'nullable|string|max:50',
             'items.*.quantity'     => 'required|integer|min:1',
             'items.*.price'        => 'required|numeric|min:0',
+            'items.*.status'       => 'required|in:bought,keep,sold_out',
             'trip_id'              => 'nullable|exists:trips,id',
         ]);
 
@@ -165,7 +181,7 @@ class OrderController extends Controller
                 'customer_id'         => $customerId,
                 'user_id'             => Auth::id(),
                 'order_date'          => $request->input('order_date'),
-                'status'              => $request->input('status'),
+                'status'              => $this->deriveOrderStatus($items),
                 'discount'            => $request->input('discount', 0),
                 'discount_product'    => $request->input('discount_product', 0),
                 'discount_shipping'   => $request->input('discount_shipping', 0),
@@ -190,6 +206,7 @@ class OrderController extends Controller
                     'quantity'     => $item['quantity'],
                     'price'        => $item['price'],
                     'total_price'  => $item['quantity'] * $item['price'],
+                    'status'       => $item['status'] ?? 'keep',
                 ]);
 
                 if (!empty($item['product_id'])) {
@@ -267,6 +284,7 @@ class OrderController extends Controller
             'items.*.size'         => 'nullable|string|max:50',
             'items.*.quantity'     => 'required|integer|min:1',
             'items.*.price'        => 'required|numeric|min:0',
+            'items.*.status'       => 'required|in:bought,keep,sold_out',
         ]);
 
         $items         = $request->input('items');
@@ -357,7 +375,7 @@ class OrderController extends Controller
             $order->update([
                 'customer_id'         => $request->input('customer_id'),
                 'order_date'          => $request->input('order_date'),
-                'status'              => $request->input('status'),
+                'status'              => $this->deriveOrderStatus($items),
                 'discount'            => $request->input('discount', 0),
                 'discount_product'    => $request->input('discount_product', 0),
                 'discount_shipping'   => $request->input('discount_shipping', 0),
@@ -383,6 +401,7 @@ class OrderController extends Controller
                     'quantity'     => $item['quantity'],
                     'price'        => $item['price'],
                     'total_price'  => $item['quantity'] * $item['price'],
+                    'status'       => $item['status'] ?? 'keep',
                 ]);
 
                 if (!empty($item['product_id'])) {

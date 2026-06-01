@@ -93,9 +93,18 @@ export default function OrderShow({ order }: any) {
                     <div className="flex items-center gap-3">
                         <Link href="/orders" className="text-muted-foreground hover:text-foreground text-sm">← Back</Link>
                         <h1 className="text-xl font-semibold">Order #{order.id}</h1>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[order.status]}`}>
-                            {STATUS_LABELS[order.status]}
-                        </span>
+                        {/* Summary of item statuses */}
+                        {(() => {
+                            const counts: Record<string, number> = {};
+                            (order.items ?? []).forEach((item: any) => {
+                                counts[item.status] = (counts[item.status] ?? 0) + 1;
+                            });
+                            return Object.entries(counts).map(([status, count]) => (
+                                <span key={status} className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[status] ?? ''}`}>
+                                    {STATUS_LABELS[status] ?? status} ×{count}
+                                </span>
+                            ));
+                        })()}
                     </div>
                     <div className="flex gap-2">
                         <button onClick={() => window.open(`/customers/${order.customer_id}/print`, '_blank')}
@@ -136,6 +145,7 @@ export default function OrderShow({ order }: any) {
                                     <th className="text-left px-4 py-2">Size</th>
                                     <th className="text-right px-4 py-2">Qty</th>
                                     <th className="text-right px-4 py-2">Price</th>
+                                    <th className="text-left px-4 py-2">Status</th>
                                     <th className="text-right px-4 py-2">Total</th>
                                 </tr>
                             </thead>
@@ -147,6 +157,11 @@ export default function OrderShow({ order }: any) {
                                         <td className="px-4 py-2 text-muted-foreground">{item.size ?? '—'}</td>
                                         <td className="px-4 py-2 text-right">{item.quantity}</td>
                                         <td className="px-4 py-2 text-right">{Number(item.price).toLocaleString()}</td>
+                                        <td className="px-4 py-2">
+                                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[item.status] ?? STATUS_COLORS['keep']}`}>
+                                                {STATUS_LABELS[item.status] ?? item.status}
+                                            </span>
+                                        </td>
                                         <td className="px-4 py-2 text-right font-medium">{Number(item.total_price).toLocaleString()}</td>
                                     </tr>
                                 ))}

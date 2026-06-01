@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus, Trash2, Users, UserPlus, ChevronDown } from 'lucide-react';
 
-const emptyItem = { product_id: null, product_name: '', color: '', size: '', quantity: 1, price: 0, weight: 0 };
+const emptyItem = { product_id: null, product_name: '', color: '', size: '', quantity: 1, price: 0, weight: 0, status: 'keep' };
 
 function calcKg(totalGrams: number): number {
     if (totalGrams <= 0) return 0;
@@ -32,7 +32,6 @@ export default function OrderCreate({ customers, areas, trips }: any) {
         new_customer_type:       'normal',
         new_customer_promo_type: 'default',
         order_date:           new Date().toISOString().slice(0, 10),
-        status:               'bought',
         discount:             0,
         discount_product:     0,
         discount_shipping:    0,
@@ -450,18 +449,6 @@ export default function OrderCreate({ customers, areas, trips }: any) {
                             <Label>Order date *</Label>
                             <Input type="date" value={data.order_date} onChange={e => setData('order_date', e.target.value)} />
                         </div>
-                        <div className="space-y-1">
-                            <Label>Status *</Label>
-                            <select
-                                className="w-full rounded-md border px-3 py-2 text-sm bg-background"
-                                value={data.status}
-                                onChange={e => setData('status', e.target.value)}
-                            >
-                                <option value="bought">Bought</option>
-                                <option value="keep">Keep</option>
-                                <option value="sold_out">Sold Out</option>
-                            </select>
-                        </div>
                         <div className="space-y-1 col-span-2">
                             <Label>Courier</Label>
                             <Input value={data.courier} onChange={e => setData('courier', e.target.value)} placeholder="e.g. JNE, J&T" />
@@ -500,6 +487,7 @@ export default function OrderCreate({ customers, areas, trips }: any) {
                                         <th className="text-left px-3 py-2 w-28">Size</th>
                                         <th className="text-left px-3 py-2 w-24">Qty</th>
                                         <th className="text-left px-3 py-2 w-28">Price</th>
+                                        <th className="text-left px-3 py-2 w-28">Status</th>
                                         <th className="text-right px-3 py-2 w-24">Total</th>
                                         <th className="px-3 py-2 w-10"></th>
                                     </tr>
@@ -636,6 +624,17 @@ export default function OrderCreate({ customers, areas, trips }: any) {
                                                         onChange={e => updateItem(i, 'price', parseFloat(e.target.value) || 0)}
                                                         className="w-28"
                                                     />
+                                                </td>
+                                                <td className="px-2 py-2">
+                                                    <select
+                                                        className="w-full rounded-md border px-2 py-1.5 text-sm bg-background"
+                                                        value={item.status}
+                                                        onChange={e => updateItem(i, 'status', e.target.value)}
+                                                    >
+                                                        <option value="keep">Keep</option>
+                                                        <option value="bought">Bought</option>
+                                                        <option value="sold_out">Sold Out</option>
+                                                    </select>
                                                 </td>
                                                 <td className="px-3 py-2 text-right font-medium whitespace-nowrap">
                                                     {(Number(item.quantity) * Number(item.price)).toLocaleString()}

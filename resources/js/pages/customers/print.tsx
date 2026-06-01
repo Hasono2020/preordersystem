@@ -121,7 +121,21 @@ export default function CustomerPrint({ customer, summary }: any) {
                                             <span>{new Date(order.order_date).toLocaleDateString('en-GB', {
                                                 day: '2-digit', month: 'short', year: 'numeric'
                                             })}</span>
-                                            <span className="badge">{STATUS_LABELS[order.status]}</span>
+                                            {(() => {
+                                                const counts: Record<string, number> = {};
+                                                (order.items ?? []).forEach((item: any) => {
+                                                    counts[item.status] = (counts[item.status] ?? 0) + 1;
+                                                });
+                                                return Object.entries(counts).map(([status, count]) => (
+                                                    <span key={status} className="badge" style={{
+                                                        background: status === 'bought' ? '#dcfce7' : status === 'sold_out' ? '#fee2e2' : '#fef9c3',
+                                                        color: status === 'bought' ? '#166534' : status === 'sold_out' ? '#991b1b' : '#854d0e',
+                                                        marginRight: 4,
+                                                    }}>
+                                                        {STATUS_LABELS[status] ?? status}{count > 1 ? ` ×${count}` : ''}
+                                                    </span>
+                                                ));
+                                            })()}
                                             {order.courier && <span style={{ color: '#555' }}>via {order.courier}</span>}
                                         </div>
                                         <strong>Total: {Number(order.total_price).toLocaleString()}</strong>
@@ -136,6 +150,7 @@ export default function CustomerPrint({ customer, summary }: any) {
                                                 <th>Size</th>
                                                 <th className="right">Qty</th>
                                                 <th className="right">Price</th>
+                                                <th>Status</th>
                                                 <th className="right">Total</th>
                                             </tr>
                                         </thead>
@@ -147,6 +162,13 @@ export default function CustomerPrint({ customer, summary }: any) {
                                                     <td>{item.size ?? '—'}</td>
                                                     <td className="right">{item.quantity}</td>
                                                     <td className="right">{Number(item.price).toLocaleString()}</td>
+                                                    <td><span style={{
+                                                        fontSize: 10,
+                                                        padding: '2px 6px',
+                                                        borderRadius: 999,
+                                                        background: item.status === 'bought' ? '#dcfce7' : item.status === 'sold_out' ? '#fee2e2' : '#fef9c3',
+                                                        color: item.status === 'bought' ? '#166534' : item.status === 'sold_out' ? '#991b1b' : '#854d0e',
+                                                    }}>{STATUS_LABELS[item.status ?? 'keep'] ?? item.status}</span></td>
                                                     <td className="right">{Number(item.total_price).toLocaleString()}</td>
                                                 </tr>
                                             ))}
