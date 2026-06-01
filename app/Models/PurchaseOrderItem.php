@@ -17,8 +17,8 @@ class PurchaseOrderItem extends Model
 
     public function purchaseOrder()
     {
-        // FIX 5: Removed unused `use App\Models\PurchaseOrder` import.
-        // Laravel resolves belongsTo by convention, no import needed.
+        // PurchaseOrder::class requires the import below to resolve correctly
+        // at runtime. Without it PHP throws "Class PurchaseOrder not found".
         return $this->belongsTo(PurchaseOrder::class);
     }
 
