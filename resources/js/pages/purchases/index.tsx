@@ -28,6 +28,11 @@ export default function PurchasesIndex({ purchases }: any) {
                         {flash.success}
                     </div>
                 )}
+                {flash?.error && (
+                    <div className="rounded-md bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-800">
+                        {flash.error}
+                    </div>
+                )}
 
                 <div className="rounded-2xl border shadow-sm overflow-hidden">
                     <table className="w-full text-sm">
@@ -67,7 +72,10 @@ export default function PurchasesIndex({ purchases }: any) {
                                         <Link href={`/purchases/${p.id}/edit`}>
                                             <Button variant="ghost" size="icon"><Pencil className="size-4" /></Button>
                                         </Link>
-                                        <Button variant="ghost" size="icon" onClick={() => destroy(p.id)}>
+                                        <Button variant="ghost" size="icon" onClick={() => destroy(p.id)}
+                                            disabled={p.status === 'confirmed'}
+                                            title={p.status === 'confirmed' ? 'Cannot delete a confirmed PO' : 'Delete'}
+                                            className={p.status === 'confirmed' ? 'opacity-30 cursor-not-allowed' : ''}>
                                             <Trash2 className="size-4 text-destructive" />
                                         </Button>
                                     </td>
