@@ -5,7 +5,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus, Trash2, Users, UserPlus, ChevronDown } from 'lucide-react';
 
-const emptyItem = { product_id: null, product_name: '', color: '', size: '', quantity: 1, price: 0, weight: 0, status: 'keep' };
+// ── Types ────────────────────────────────────────────────────────────────────
+interface Variant   { color: string; size: string; quantity: number }
+interface Product   { id: number; code: string; name: string; price: number; weight: number; quantity: number; colors: string[]; sizes: string[]; variants: Variant[]; exclude_from_promo: boolean }
+interface Customer  { id: number; name: string; phone: string; area_id: number | null; type: string; promo_type: string }
+interface Area      { id: number; name: string; price_per_kg: number }
+interface Trip      { id: number; name: string; destination: string | null; status: string }
+interface OrderItem { product_id: number | null; product_name: string; color: string; size: string; quantity: number | string; price: number; weight?: number; exclude_from_promo: boolean }
+interface PromoRule { id: number; label: string; customer_type: string; min_items: number; discount_flat: number; discount_per_item: number; free_shipping_max: number }
+// ─────────────────────────────────────────────────────────────────────────────
+
+
+const emptyItem: OrderItem = { product_id: null, product_name: '', color: '', size: '', quantity: 1, price: 0, weight: 0, exclude_from_promo: false };
 
 function calcKg(totalGrams: number): number {
     if (totalGrams <= 0) return 0;
@@ -17,7 +28,7 @@ function noScroll(e: React.WheelEvent<HTMLInputElement>) {
     (e.target as HTMLInputElement).blur();
 }
 
-export default function OrderCreate({ customers, areas, trips }: any) {
+export default function OrderCreate({ customers, areas, trips }: { customers: Customer[]; areas: Area[]; trips: Trip[] }) {
     const [customerMode, setCustomerMode]     = useState<'existing' | 'new'>('existing');
     const [customerSearch, setCustomerSearch] = useState('');
     const [showDropdown, setShowDropdown]     = useState(false);
@@ -32,6 +43,7 @@ export default function OrderCreate({ customers, areas, trips }: any) {
         new_customer_type:       'normal',
         new_customer_promo_type: 'default',
         order_date:           new Date().toISOString().slice(0, 10),
+        status:               'bought',
         discount:             0,
         discount_product:     0,
         discount_shipping:    0,
@@ -54,12 +66,12 @@ export default function OrderCreate({ customers, areas, trips }: any) {
 
     const filteredCustomers = customerSearch.trim() === ''
         ? customers
-        : customers.filter((c: any) =>
+        : customers.filter((c: Customer) =>
             c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
             (c.phone && c.phone.includes(customerSearch))
           );
 
-    const selectedCustomer = customers.find((c: any) => String(c.id) === String(data.customer_id));
+    const selectedCustomer = customers.find((c: Customer) => String(c.id) === String(data.customer_id));
 
     // Sync customer mode
     useEffect(() => {
@@ -69,9 +81,9 @@ export default function OrderCreate({ customers, areas, trips }: any) {
     // Auto-fill shipping when existing customer selected
     useEffect(() => {
         if (customerMode === 'existing' && data.customer_id) {
-            const customer = customers.find((c: any) => String(c.id) === String(data.customer_id));
+            const customer = customers.find((c: Customer) => String(c.id) === String(data.customer_id));
             if (customer?.area_id) {
-                const area = areas.find((a: any) => a.id === customer.area_id);
+                const area = areas.find((a: Area) => a.id === customer.area_id);
                 if (area) {
                     setData(prev => ({
                         ...prev,
@@ -88,7 +100,7 @@ export default function OrderCreate({ customers, areas, trips }: any) {
     // Auto-fill shipping when new customer area selected
     useEffect(() => {
         if (customerMode === 'new' && data.new_customer_area_id) {
-            const area = areas.find((a: any) => String(a.id) === String(data.new_customer_area_id));
+            const area = areas.find((a: Area) => String(a.id) === String(data.new_customer_area_id));
             if (area) {
                 setData(prev => ({
                     ...prev,
@@ -109,7 +121,7 @@ export default function OrderCreate({ customers, areas, trips }: any) {
 
     // Auto-calculate weight
     useEffect(() => {
-        const totalGrams = data.items.reduce((sum: number, item: any, i: number) => {
+        const totalGrams = data.items.reduce((sum: number, item: OrderItem, i: number) => {
             const product = selectedProducts[i];
             return sum + (product ? Number(product.weight) * Number(item.quantity) : 0);
         }, 0);
@@ -132,7 +144,7 @@ export default function OrderCreate({ customers, areas, trips }: any) {
             : (data.new_customer_promo_type === 'reseller_promo' ? 'reseller' : data.new_customer_type);
 
         // Only count items whose linked product is NOT excluded from promo
-        const eligibleQty = data.items.reduce((sum: number, item: any, i: number) => {
+        const eligibleQty = data.items.reduce((sum: number, item: OrderItem, i: number) => {
             const product = selectedProducts[i];
             return sum + (product?.exclude_from_promo ? 0 : Number(item.quantity));
         }, 0);
@@ -166,7 +178,7 @@ export default function OrderCreate({ customers, areas, trips }: any) {
     async function searchProduct(i: number, query: string) {
         setProductSearch(prev => ({ ...prev, [i]: query }));
         const items = [...data.items];
-        items[i] = { ...items[i], product_id: null, product_name: query };
+        items[i] = { ...items[i], product_id: null as null, product_name: query };
         setData('items', items);
         if (query.length < 1) {
             setProductResults(prev => ({ ...prev, [i]: [] }));
@@ -178,10 +190,10 @@ export default function OrderCreate({ customers, areas, trips }: any) {
     }
 
     // Returns stock for a specific color+size combo
-    function getVariantStock(product: any, color: string, size: string): number {
+    function getVariantStock(product: Product, color: string, size: string): number {
         const variants = product?.variants ?? [];
         if (!color && !size) return product?.quantity ?? 0;
-        const v = variants.find((v: any) =>
+        const v = variants.find((v: Variant) =>
             v.color?.toUpperCase() === color?.toUpperCase() &&
             v.size?.toUpperCase()  === size?.toUpperCase()
         );
@@ -189,20 +201,20 @@ export default function OrderCreate({ customers, areas, trips }: any) {
     }
 
     // Returns colors that have at least one size with stock > 0
-    function availableColors(product: any): string[] {
+    function availableColors(product: Product): string[] {
         const variants = product?.variants ?? [];
         if (!variants.length) return product?.colors ?? [];
         return (product?.colors ?? []).filter((c: string) =>
-            variants.some((v: any) => v.color?.toUpperCase() === c.toUpperCase() && v.quantity > 0)
+            variants.some((v: Variant) => v.color?.toUpperCase() === c.toUpperCase() && v.quantity > 0)
         );
     }
 
     // Returns sizes for a given color that have stock > 0
-    function availableSizesForColor(product: any, color: string): string[] {
+    function availableSizesForColor(product: Product, color: string): string[] {
         const variants = product?.variants ?? [];
         if (!variants.length) return product?.sizes ?? [];
         return (product?.sizes ?? []).filter((s: string) =>
-            variants.some((v: any) =>
+            variants.some((v: Variant) =>
                 v.color?.toUpperCase() === color?.toUpperCase() &&
                 v.size?.toUpperCase()  === s.toUpperCase() &&
                 v.quantity > 0
@@ -210,11 +222,11 @@ export default function OrderCreate({ customers, areas, trips }: any) {
         );
     }
 
-    function selectProduct(i: number, product: any) {
+    function selectProduct(i: number, product: Product) {
         const items    = [...data.items];
         const variants = product.variants ?? [];
         // Pick first color+size with stock > 0
-        const firstAvail = variants.find((v: any) => v.quantity > 0);
+        const firstAvail = variants.find((v: Variant) => v.quantity > 0);
         const defaultColor = firstAvail?.color ?? (product.colors?.[0] ?? '');
         const defaultSize  = firstAvail?.size  ?? (product.sizes?.[0]  ?? '');
         items[i] = {
@@ -237,22 +249,22 @@ export default function OrderCreate({ customers, areas, trips }: any) {
     }
 
     function removeItem(i: number) {
-        setData('items', data.items.filter((_: any, idx: number) => idx !== i));
+        setData('items', data.items.filter((_: OrderItem, idx: number) => idx !== i));
         setProductSearch(prev => { const n = { ...prev }; delete n[i]; return n; });
         setProductResults(prev => { const n = { ...prev }; delete n[i]; return n; });
         setSelectedProducts(prev => { const n = { ...prev }; delete n[i]; return n; });
     }
 
-    function updateItem(i: number, field: string, value: any) {
+    function updateItem(i: number, field: keyof OrderItem, value: unknown) {
         const items = [...data.items];
         items[i]    = { ...items[i], [field]: value };
         setData('items', items);
     }
 
-    const itemsTotal = data.items.reduce((sum: number, i: any) => sum + (Number(i.quantity) * Number(i.price)), 0);
+    const itemsTotal = data.items.reduce((sum: number, i: OrderItem) => sum + (Number(i.quantity) * Number(i.price)), 0);
     const grandTotal = itemsTotal - Number(data.discount) + Number(data.total_shipping_fee);
     const remaining  = grandTotal - Number(data.down_payment);
-    const totalGrams = data.items.reduce((sum: number, item: any, i: number) => {
+    const totalGrams = data.items.reduce((sum: number, item: OrderItem, i: number) => {
         const product = selectedProducts[i];
         return sum + (product ? Number(product.weight) * Number(item.quantity) : 0);
     }, 0);
@@ -346,7 +358,7 @@ export default function OrderCreate({ customers, areas, trips }: any) {
                                             {filteredCustomers.length === 0 ? (
                                                 <p className="px-3 py-4 text-sm text-center text-muted-foreground">No customers found.</p>
                                             ) : (
-                                                filteredCustomers.map((c: any) => (
+                                                filteredCustomers.map((c: Customer) => (
                                                     <button
                                                         key={c.id}
                                                         type="button"
@@ -404,7 +416,7 @@ export default function OrderCreate({ customers, areas, trips }: any) {
                                         onChange={e => setData('new_customer_area_id', e.target.value)}
                                     >
                                         <option value="">— Select area —</option>
-                                        {areas.map((area: any) => (
+                                        {areas.map((area: Area) => (
                                             <option key={area.id} value={area.id}>
                                                 {area.name} — {Number(area.price_per_kg).toLocaleString()}/kg
                                             </option>
@@ -449,6 +461,18 @@ export default function OrderCreate({ customers, areas, trips }: any) {
                             <Label>Order date *</Label>
                             <Input type="date" value={data.order_date} onChange={e => setData('order_date', e.target.value)} />
                         </div>
+                        <div className="space-y-1">
+                            <Label>Status *</Label>
+                            <select
+                                className="w-full rounded-md border px-3 py-2 text-sm bg-background"
+                                value={data.status}
+                                onChange={e => setData('status', e.target.value)}
+                            >
+                                <option value="bought">Bought</option>
+                                <option value="keep">Keep</option>
+                                <option value="sold_out">Sold Out</option>
+                            </select>
+                        </div>
                         <div className="space-y-1 col-span-2">
                             <Label>Courier</Label>
                             <Input value={data.courier} onChange={e => setData('courier', e.target.value)} placeholder="e.g. JNE, J&T" />
@@ -461,9 +485,9 @@ export default function OrderCreate({ customers, areas, trips }: any) {
                                 onChange={e => setData('trip_id', e.target.value)}
                             >
                                 <option value="">— No trip (walk-in) —</option>
-                                {trips.map((t: any) => (
+                                {trips.map((t: Trip) => (
                                     <option key={t.id} value={t.id}>
-                                        {t.name} {t.location ? `(${t.location})` : ''}
+                                        {t.name} {t.destination ? `(${t.destination})` : ''}
                                     </option>
                                 ))}
                             </select>
@@ -487,13 +511,12 @@ export default function OrderCreate({ customers, areas, trips }: any) {
                                         <th className="text-left px-3 py-2 w-28">Size</th>
                                         <th className="text-left px-3 py-2 w-24">Qty</th>
                                         <th className="text-left px-3 py-2 w-28">Price</th>
-                                        <th className="text-left px-3 py-2 w-28">Status</th>
                                         <th className="text-right px-3 py-2 w-24">Total</th>
                                         <th className="px-3 py-2 w-10"></th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {data.items.map((item: any, i: number) => {
+                                    {data.items.map((item: OrderItem, i: number) => {
                                         const matched = selectedProducts[i];
                                         const colors  = matched?.colors ?? [];
                                         const sizes   = matched?.sizes  ?? [];
@@ -508,7 +531,7 @@ export default function OrderCreate({ customers, areas, trips }: any) {
                                                     />
                                                     {(productResults[i] ?? []).length > 0 && (
                                                         <div className="absolute z-20 top-full left-0 w-72 bg-background border rounded-lg shadow-lg mt-1">
-                                                            {productResults[i].map((p: any) => (
+                                                            {productResults[i].map((p: Product) => (
                                                                 <button
                                                                     key={p.id}
                                                                     type="button"
@@ -565,7 +588,7 @@ export default function OrderCreate({ customers, areas, trips }: any) {
                                                             <option value="">Color</option>
                                                             {colors.map((c: string) => {
                                                                 const hasStock = matched?.variants?.length
-                                                                    ? matched.variants.some((v: any) => v.color?.toUpperCase() === c.toUpperCase() && v.quantity > 0)
+                                                                    ? matched.variants.some((v: Variant) => v.color?.toUpperCase() === c.toUpperCase() && v.quantity > 0)
                                                                     : true;
                                                                 return (
                                                                     <option key={c} value={c}>
@@ -624,17 +647,6 @@ export default function OrderCreate({ customers, areas, trips }: any) {
                                                         onChange={e => updateItem(i, 'price', parseFloat(e.target.value) || 0)}
                                                         className="w-28"
                                                     />
-                                                </td>
-                                                <td className="px-2 py-2">
-                                                    <select
-                                                        className="w-full rounded-md border px-2 py-1.5 text-sm bg-background"
-                                                        value={item.status}
-                                                        onChange={e => updateItem(i, 'status', e.target.value)}
-                                                    >
-                                                        <option value="keep">Keep</option>
-                                                        <option value="bought">Bought</option>
-                                                        <option value="sold_out">Sold Out</option>
-                                                    </select>
                                                 </td>
                                                 <td className="px-3 py-2 text-right font-medium whitespace-nowrap">
                                                     {(Number(item.quantity) * Number(item.price)).toLocaleString()}
@@ -699,9 +711,9 @@ export default function OrderCreate({ customers, areas, trips }: any) {
                             <span>{itemsTotal.toLocaleString()}</span>
                         </div>
                         {activePromo && (() => {
-                            const eligibleQty = data.items.reduce((s: number, item: any, i: number) =>
+                            const eligibleQty = data.items.reduce((s: number, item: OrderItem, i: number) =>
                                 s + (selectedProducts[i]?.exclude_from_promo ? 0 : Number(item.quantity)), 0);
-                            const excludedQty = data.items.reduce((s: number, item: any, i: number) =>
+                            const excludedQty = data.items.reduce((s: number, item: OrderItem, i: number) =>
                                 s + (selectedProducts[i]?.exclude_from_promo ? Number(item.quantity) : 0), 0);
                             return (
                                 <div className="text-xs bg-green-50 text-green-700 border border-green-200 rounded px-3 py-2 space-y-0.5">
@@ -762,4 +774,4 @@ export default function OrderCreate({ customers, areas, trips }: any) {
     );
 }
 
-OrderCreate.layout = (page: any) => page;
+OrderCreate.layout = (page: React.ReactNode) => page;

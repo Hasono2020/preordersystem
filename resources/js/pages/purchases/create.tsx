@@ -5,13 +5,28 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus, Trash2 } from 'lucide-react';
 
+// ── Types ────────────────────────────────────────────────────────────────────
+interface Trip        { id: number; name: string; location?: string; destination?: string; start_date?: string; end_date?: string; status: string }
+interface Customer    { id: number; name: string; phone?: string }
+interface Order       { id: number; customer?: Customer; order_date: string; status: string; total_price: number; remaining_payment: number; items: OrderItem[] }
+interface OrderItem   { id: number; product_name: string; color?: string; size?: string; quantity: number; price: number; total_price: number; status?: string }
+interface Payment     { id: number; amount: number; paid_at: string; note?: string }
+interface Allocation  { order_id: number; customer_name: string; order_date: string; qty_requested: number; qty_allocated: number; will_get: boolean; fully_filled: boolean }
+interface AllocRow    { po_item_id: number; product_name: string; color: string; size: string; qty_needed: number; qty_available: number; qty_shortfall: number; has_shortfall: boolean; allocations: Allocation[] }
+interface PurchItem   { product_id: number | null; product_name: string; color: string; size: string; qty_ordered: number; qty_received: number; cost_price: number; total_cost: number }
+interface Customer2   { name: string; quantity: number; order_id: number }
+interface SummaryRow  { product_name: string; color: string; size: string; total_qty: number; customers: Customer2[] }
+interface StatItem    { label: string; value: string | number; color: string }
+// ─────────────────────────────────────────────────────────────────────────────
+
+
 function noScroll(e: React.WheelEvent<HTMLInputElement>) {
     (e.target as HTMLInputElement).blur();
 }
 
 const emptyItem = { product_id: null, product_name: '', color: '', size: '', qty_ordered: 0, qty_received: 0, cost_price: 0, total_cost: 0 };
 
-export default function PurchaseCreate({ trips, suggested, tripId }: any) {
+export default function PurchaseCreate({ trips, suggested, tripId }: { trips: Trip[]; suggested: PurchItem[]; tripId?: string }) {
     const { data, setData, post, processing, errors } = useForm({
         trip_id:       tripId ?? '',
         supplier_name: '',
@@ -26,10 +41,10 @@ export default function PurchaseCreate({ trips, suggested, tripId }: any) {
     }
 
     function removeItem(i: number) {
-        setData('items', data.items.filter((_: any, idx: number) => idx !== i));
+        setData('items', data.items.filter((_: PurchItem, idx: number) => idx !== i));
     }
 
-    function updateItem(i: number, field: string, value: any) {
+    function updateItem(i: number, field: keyof PurchItem, value: unknown) {
         const items   = [...data.items];
         items[i]      = { ...items[i], [field]: value };
         // Auto calculate total cost
@@ -49,7 +64,7 @@ export default function PurchaseCreate({ trips, suggested, tripId }: any) {
         }
     }
 
-    const totalCost = data.items.reduce((sum: number, i: any) =>
+    const totalCost = data.items.reduce((sum: number, i: PurchItem) =>
         sum + (Number(i.qty_received) * Number(i.cost_price)), 0);
 
     function submit(e: React.FormEvent) {
@@ -75,7 +90,7 @@ export default function PurchaseCreate({ trips, suggested, tripId }: any) {
                                 value={data.trip_id}
                                 onChange={e => handleTripChange(e.target.value)}>
                                 <option value="">— No trip —</option>
-                                {trips.map((t: any) => (
+                                {trips.map((t: Trip) => (
                                     <option key={t.id} value={t.id}>{t.name} {t.location ? `(${t.location})` : ''}</option>
                                 ))}
                             </select>
@@ -139,7 +154,7 @@ export default function PurchaseCreate({ trips, suggested, tripId }: any) {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {data.items.map((item: any, i: number) => (
+                                    {data.items.map((item: PurchItem, i: number) => (
                                         <tr key={i} className={`border-t ${Number(item.qty_received) < Number(item.qty_ordered) && item.qty_ordered > 0 ? 'bg-amber-50/50' : ''}`}>
                                             <td className="px-2 py-2">
                                                 <Input value={item.product_name}
@@ -202,7 +217,7 @@ export default function PurchaseCreate({ trips, suggested, tripId }: any) {
                                     <span>Total Cost</span>
                                     <span>{totalCost.toLocaleString()}</span>
                                 </div>
-                                {data.items.some((i: any) => Number(i.qty_received) < Number(i.qty_ordered) && i.qty_ordered > 0) && (
+                                {data.items.some((i: PurchItem) => Number(i.qty_received) < Number(i.qty_ordered) && i.qty_ordered > 0) && (
                                     <p className="text-xs text-amber-600">
                                         ⚠ Some items received less than ordered
                                     </p>
@@ -224,4 +239,4 @@ export default function PurchaseCreate({ trips, suggested, tripId }: any) {
     );
 }
 
-PurchaseCreate.layout = (page: any) => page;
+PurchaseCreate.layout = (page: React.ReactNode) => page;

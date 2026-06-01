@@ -4,6 +4,21 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+// ── Types ────────────────────────────────────────────────────────────────────
+interface Trip        { id: number; name: string; location?: string; destination?: string; start_date?: string; end_date?: string; status: string }
+interface Customer    { id: number; name: string; phone?: string }
+interface Order       { id: number; customer?: Customer; order_date: string; status: string; total_price: number; remaining_payment: number; items: OrderItem[] }
+interface OrderItem   { id: number; product_name: string; color?: string; size?: string; quantity: number; price: number; total_price: number; status?: string }
+interface Payment     { id: number; amount: number; paid_at: string; note?: string }
+interface Allocation  { order_id: number; customer_name: string; order_date: string; qty_requested: number; qty_allocated: number; will_get: boolean; fully_filled: boolean }
+interface AllocRow    { po_item_id: number; product_name: string; color: string; size: string; qty_needed: number; qty_available: number; qty_shortfall: number; has_shortfall: boolean; allocations: Allocation[] }
+interface PurchItem   { product_id: number | null; product_name: string; color: string; size: string; qty_ordered: number; qty_received: number; cost_price: number; total_cost: number }
+interface Customer2   { name: string; quantity: number; order_id: number }
+interface SummaryRow  { product_name: string; color: string; size: string; total_qty: number; customers: Customer2[] }
+interface StatItem    { label: string; value: string | number; color: string }
+// ─────────────────────────────────────────────────────────────────────────────
+
+
 const STATUS_COLORS: Record<string, string> = {
     bought:   'bg-green-100 text-green-800',
     keep:     'bg-yellow-100 text-yellow-800',
@@ -64,13 +79,13 @@ function PaymentForm({ orderId, remaining }: { orderId: number; remaining: numbe
     );
 }
 
-export default function OrderShow({ order }: any) {
+export default function OrderShow({ order }: { order: Order & { customer_id: number; discount: number; discount_product?: number; discount_shipping?: number; total_shipping_fee: number; down_payment: number; courier?: string; notes?: string; user?: { name: string }; payments: Payment[] } }) {
     function destroy() {
-        if (confirm('Delete this order?')) router.delete(`/orders/${order.id}`);
+        if (window.confirm('Delete this order?')) router.delete(`/orders/${order.id}`);
     }
 
     function removePayment(paymentId: number) {
-        if (confirm('Remove this payment?'))
+        if (window.confirm('Remove this payment?'))
             router.delete(`/orders/${order.id}/payments/${paymentId}`);
     }
 
@@ -78,10 +93,10 @@ export default function OrderShow({ order }: any) {
     const discountShipping = Number(order.discount_shipping ?? 0);
     const totalDiscount    = Number(order.discount);
     const hasBreakdown     = discountProduct > 0 || discountShipping > 0;
-    const itemsTotal       = order.items.reduce((s: number, i: any) => s + Number(i.total_price), 0);
+    const itemsTotal       = order.items.reduce((s: number, i: OrderItem) => s + Number(i.total_price), 0);
     const payments         = order.payments ?? [];
     // totalPaid = down_payment + all subsequent payments
-    const totalSubsequent  = payments.reduce((s: number, p: any) => s + Number(p.amount), 0);
+    const totalSubsequent  = payments.reduce((s: number, p: Payment) => s + Number(p.amount), 0);
     const totalPaid        = Number(order.down_payment) + totalSubsequent;
     const isFullyPaid      = Number(order.remaining_payment) <= 0;
 
@@ -96,12 +111,12 @@ export default function OrderShow({ order }: any) {
                         {/* Summary of item statuses */}
                         {(() => {
                             const counts: Record<string, number> = {};
-                            (order.items ?? []).forEach((item: any) => {
-                                counts[item.status] = (counts[item.status] ?? 0) + 1;
+                            (order.items ?? []).forEach((item: OrderItem) => {
+                                const st = item.status ?? 'keep'; counts[st] = (counts[st] ?? 0) + 1;
                             });
                             return Object.entries(counts).map(([status, count]) => (
-                                <span key={status} className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[status] ?? ''}`}>
-                                    {STATUS_LABELS[status] ?? status} ×{count}
+                                <span key={status} className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[status as string] ?? ''}`}>
+                                    {STATUS_LABELS[status as string] ?? status} ×{count}
                                 </span>
                             ));
                         })()}
@@ -150,7 +165,7 @@ export default function OrderShow({ order }: any) {
                                 </tr>
                             </thead>
                             <tbody>
-                                {order.items.map((item: any) => (
+                                {order.items.map((item: OrderItem) => (
                                     <tr key={item.id} className="border-t">
                                         <td className="px-4 py-2 font-medium">{item.product_name}</td>
                                         <td className="px-4 py-2 text-muted-foreground">{item.color ?? '—'}</td>
@@ -158,8 +173,8 @@ export default function OrderShow({ order }: any) {
                                         <td className="px-4 py-2 text-right">{item.quantity}</td>
                                         <td className="px-4 py-2 text-right">{Number(item.price).toLocaleString()}</td>
                                         <td className="px-4 py-2">
-                                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[item.status] ?? STATUS_COLORS['keep']}`}>
-                                                {STATUS_LABELS[item.status] ?? item.status}
+                                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[item.status ?? 'keep'] ?? STATUS_COLORS['keep']}`}>
+                                                {STATUS_LABELS[item.status ?? 'keep'] ?? item.status}
                                             </span>
                                         </td>
                                         <td className="px-4 py-2 text-right font-medium">{Number(item.total_price).toLocaleString()}</td>
@@ -225,7 +240,7 @@ export default function OrderShow({ order }: any) {
                     </div>
 
                     {/* Subsequent payments */}
-                    {payments.map((p: any) => (
+                    {payments.map((p: Payment) => (
                         <div key={p.id} className="flex justify-between items-center text-sm">
                             <span className="text-muted-foreground">
                                 Payment — {new Date(p.paid_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -257,4 +272,4 @@ export default function OrderShow({ order }: any) {
     );
 }
 
-OrderShow.layout = (page: any) => page;
+OrderShow.layout = (page: React.ReactNode) => page;

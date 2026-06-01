@@ -3,7 +3,22 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight, CheckCircle, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-export default function PurchaseAllocate({ purchase, allocationData }: any) {
+// ── Types ────────────────────────────────────────────────────────────────────
+interface Trip        { id: number; name: string; location?: string; destination?: string; start_date?: string; end_date?: string; status: string }
+interface Customer    { id: number; name: string; phone?: string }
+interface Order       { id: number; customer?: Customer; order_date: string; status: string; total_price: number; remaining_payment: number; items: OrderItem[] }
+interface OrderItem   { id: number; product_name: string; color?: string; size?: string; quantity: number; price: number; total_price: number; status?: string }
+interface Payment     { id: number; amount: number; paid_at: string; note?: string }
+interface Allocation  { order_id: number; customer_name: string; order_date: string; qty_requested: number; qty_allocated: number; will_get: boolean; fully_filled: boolean }
+interface AllocRow    { po_item_id: number; product_name: string; color: string; size: string; qty_needed: number; qty_available: number; qty_shortfall: number; has_shortfall: boolean; allocations: Allocation[] }
+interface PurchItem   { product_id: number | null; product_name: string; color: string; size: string; qty_ordered: number; qty_received: number; cost_price: number; total_cost: number }
+interface Customer2   { name: string; quantity: number; order_id: number }
+interface SummaryRow  { product_name: string; color: string; size: string; total_qty: number; customers: Customer2[] }
+interface StatItem    { label: string; value: string | number; color: string }
+// ─────────────────────────────────────────────────────────────────────────────
+
+
+export default function PurchaseAllocate({ purchase, allocationData }: { purchase: { id: number }; allocationData: AllocRow[] }) {
     const [expanded, setExpanded] = useState<Record<number, boolean>>({});
 
     function toggle(id: number) {
@@ -21,11 +36,11 @@ export default function PurchaseAllocate({ purchase, allocationData }: any) {
         }
     }
 
-    const totalShortfall = allocationData.filter((r: any) => r.has_shortfall).length;
-    const affectedCustomers = allocationData.reduce((sum: number, r: any) =>
+    const totalShortfall = allocationData.filter((r: AllocRow) => r.has_shortfall).length;
+    const affectedCustomers = allocationData.reduce((sum: number, r: AllocRow) =>
         sum + r.allocations.length, 0);
-    const soldOutCustomers = allocationData.reduce((sum: number, r: any) =>
-        sum + r.allocations.filter((a: any) => !a.will_get).length, 0);
+    const soldOutCustomers = allocationData.reduce((sum: number, r: AllocRow) =>
+        sum + r.allocations.filter((a: Allocation) => !a.will_get).length, 0);
 
     return (
         <>
@@ -65,7 +80,7 @@ export default function PurchaseAllocate({ purchase, allocationData }: any) {
 
                 {/* Allocation preview per variant */}
                 <div className="space-y-3">
-                    {allocationData.map((row: any) => (
+                    {allocationData.map((row: AllocRow) => (
                         <div key={row.po_item_id} className={`rounded-xl border overflow-hidden ${row.has_shortfall ? 'border-amber-300' : 'border-green-200'}`}>
                             {/* Variant header */}
                             <button
@@ -115,7 +130,7 @@ export default function PurchaseAllocate({ purchase, allocationData }: any) {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {row.allocations.map((a: any, ai: number) => (
+                                            {row.allocations.map((a: Allocation, ai: number) => (
                                                 <tr key={ai} className={`border-t ${!a.will_get ? 'bg-red-50/50' : a.fully_filled ? '' : 'bg-amber-50/50'}`}>
                                                     <td className="px-4 py-2.5">
                                                         <Link href={`/orders/${a.order_id}`}
@@ -184,4 +199,4 @@ export default function PurchaseAllocate({ purchase, allocationData }: any) {
     );
 }
 
-PurchaseAllocate.layout = (page: any) => page;
+PurchaseAllocate.layout = (page: React.ReactNode) => page;

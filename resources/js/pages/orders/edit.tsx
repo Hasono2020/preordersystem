@@ -5,7 +5,41 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus, Trash2 } from 'lucide-react';
 
-const emptyItem = { product_id: null, product_name: '', color: '', size: '', quantity: 1, price: 0, weight: 0, exclude_from_promo: false, status: 'keep' };
+// ── Types ────────────────────────────────────────────────────────────────────
+interface Variant   { color: string; size: string; quantity: number }
+interface Product   { id: number; code: string; name: string; price: number; weight: number; quantity: number; colors: string[]; sizes: string[]; variants: Variant[]; exclude_from_promo: boolean }
+interface Customer  { id: number; name: string; phone: string; area_id: number | null; type: string; promo_type: string }
+interface Area      { id: number; name: string; price_per_kg: number }
+interface Trip      { id: number; name: string; destination: string | null; status: string }
+interface OrderItem { product_id: number | null; product_name: string; color: string; size: string; quantity: number | string; price: number; weight?: number; exclude_from_promo: boolean }
+interface Payment     { id: number; amount: number; paid_at: string; note?: string }
+interface PromoRule { id: number; label: string; customer_type: string; min_items: number; discount_flat: number; discount_per_item: number; free_shipping_max: number }
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface OrderData {
+    id: number;
+    customer_id: number;
+    trip_id?: number | null;
+    order_date: string;
+    status: string;
+    discount: number;
+    discount_product?: number;
+    discount_shipping?: number;
+    shipping_fee_per_kg: number;
+    total_shipping_fee: number;
+    weight?: number;
+    down_payment: number;
+    remaining_payment: number;
+    courier?: string;
+    notes?: string;
+    customer?: { id: number; name: string; phone?: string; area_id?: number; type: string; promo_type: string };
+    user?: { name: string };
+    payments: Payment[];
+    items: (OrderItem & { product?: Product })[];
+}
+
+
+const emptyItem = { product_id: null, product_name: '', color: '', size: '', quantity: 1, price: 0, weight: 0, exclude_from_promo: false };
 
 function calcKg(totalGrams: number): number {
     if (totalGrams <= 0) return 0;
@@ -16,10 +50,11 @@ function noScroll(e: React.WheelEvent<HTMLInputElement>) {
     (e.target as HTMLInputElement).blur();
 }
 
-export default function OrderEdit({ order, customers, areas }: any) {
+export default function OrderEdit({ order, customers, areas, trips }: { order: OrderData; customers: Customer[]; areas: Area[]; trips: Trip[] }) {
     const { data, setData, patch, processing, errors } = useForm({
         customer_id:         String(order.customer_id),
         order_date:          order.order_date,
+        status:              order.status,
         discount:            Number(order.discount),
         trip_id:             order.trip_id ? String(order.trip_id) : '',
         discount_product:    Number(order.discount_product  ?? 0),
@@ -31,7 +66,7 @@ export default function OrderEdit({ order, customers, areas }: any) {
         courier:             order.courier ?? '',
         notes:               order.notes ?? '',
         area_id:             order.customer?.area_id ? String(order.customer.area_id) : '',
-        items:               order.items.map((i: any) => ({
+        items:               order.items.map((i: OrderItem & { product?: Product }) => ({
             product_id:         i.product_id ?? null,
             product_name:       i.product_name,
             color:              i.color ?? '',
@@ -42,15 +77,14 @@ export default function OrderEdit({ order, customers, areas }: any) {
             // FIX: read exclude_from_promo from the eager-loaded product
             // (items.product is now loaded by the controller).
             exclude_from_promo: i.product?.exclude_from_promo ?? false,
-            status:             i.status ?? 'keep',
         })),
     });
 
-    const [promoRules, setPromoRules]         = useState<any[]>([]);
-    const [activePromo, setActivePromo]       = useState<any>(null);
+    const [promoRules, setPromoRules]         = useState<PromoRule[]>([]);
+    const [activePromo, setActivePromo]       = useState<PromoRule | null>(null);
     const [productSearch, setProductSearch]   = useState<Record<number, string>>({});
     const [productResults, setProductResults] = useState<Record<number, any[]>>({});
-    const [selectedProducts, setSelectedProducts] = useState<Record<number, any>>({});
+    const [selectedProducts, setSelectedProducts] = useState<Record<number, Product>>({});
 
     // Fetch active promo rules on mount
     useEffect(() => {
@@ -69,31 +103,31 @@ export default function OrderEdit({ order, customers, areas }: any) {
     // Auto-fill shipping when customer changes
     useEffect(() => {
         if (data.customer_id) {
-            const customer = customers.find((c: any) => String(c.id) === String(data.customer_id));
+            const customer = customers.find((c: Customer) => String(c.id) === String(data.customer_id));
             if (customer?.area_id) {
-                const area = areas.find((a: any) => a.id === customer.area_id);
+                const area = areas.find((a: Area) => a.id === customer.area_id);
                 if (area) {
-                    setData(prev => ({
+                    setData((prev) => ({
                         ...prev,
                         area_id:             String(area.id),
                         shipping_fee_per_kg: Number(area.price_per_kg),
                     }));
                 }
             } else {
-                setData(prev => ({ ...prev, area_id: '', shipping_fee_per_kg: 0 }));
+                setData((prev) => ({ ...prev, area_id: '', shipping_fee_per_kg: 0 }));
             }
         }
     }, [data.customer_id]);
 
     // Auto-calculate weight from items
     useEffect(() => {
-        const totalGrams = data.items.reduce((sum: number, item: any, i: number) => {
+        const totalGrams = data.items.reduce((sum: number, item: OrderItem, i: number) => {
             const product = selectedProducts[i];
             const w = product ? Number(product.weight) : Number(item.weight ?? 0);
             return sum + (w * Number(item.quantity));
         }, 0);
         if (totalGrams > 0) {
-            setData(prev => ({ ...prev, weight: calcKg(totalGrams) }));
+            setData((prev) => ({ ...prev, weight: calcKg(totalGrams) }));
         }
     }, [data.items, selectedProducts]);
 
@@ -101,7 +135,7 @@ export default function OrderEdit({ order, customers, areas }: any) {
     useEffect(() => {
         if (promoRules.length === 0) return;
 
-        const customer = customers.find((c: any) => String(c.id) === String(data.customer_id));
+        const customer = customers.find((c: Customer) => String(c.id) === String(data.customer_id));
 
         // FIX: promo_type is now included in the customers list from the
         // controller, so reseller_promo customers correctly resolve to 'reseller'.
@@ -112,7 +146,7 @@ export default function OrderEdit({ order, customers, areas }: any) {
         // FIX: use item.exclude_from_promo which is now correctly seeded from
         // the eager-loaded product for existing items, and from selectProduct()
         // for newly added items — both paths are now consistent.
-        const eligibleQty = data.items.reduce((sum: number, item: any) =>
+        const eligibleQty = data.items.reduce((sum: number, item: OrderItem) =>
             sum + (item.exclude_from_promo ? 0 : Number(item.quantity)), 0);
 
         const matching = promoRules
@@ -125,7 +159,7 @@ export default function OrderEdit({ order, customers, areas }: any) {
         setActivePromo(best);
 
         if (!best || eligibleQty === 0) {
-            setData(prev => ({ ...prev, discount: 0, discount_product: 0, discount_shipping: 0 }));
+            setData((prev) => ({ ...prev, discount: 0, discount_product: 0, discount_shipping: 0 }));
             return;
         }
 
@@ -136,14 +170,14 @@ export default function OrderEdit({ order, customers, areas }: any) {
         const productDiscount = discountFlat + discountPerItem;
         const totalDiscount   = productDiscount + freeShip;
 
-        setData(prev => ({ ...prev, discount: totalDiscount, discount_product: productDiscount, discount_shipping: freeShip }));
+        setData((prev) => ({ ...prev, discount: totalDiscount, discount_product: productDiscount, discount_shipping: freeShip }));
     }, [data.items, data.total_shipping_fee, data.customer_id, promoRules]);
 
     // Product search
     async function searchProduct(i: number, query: string) {
         setProductSearch(prev => ({ ...prev, [i]: query }));
         const items = [...data.items];
-        items[i] = { ...items[i], product_id: null, product_name: query };
+        items[i] = { ...items[i], product_id: null as null, product_name: query };
         setData('items', items);
         if (query.length < 1) {
             setProductResults(prev => ({ ...prev, [i]: [] }));
@@ -154,21 +188,21 @@ export default function OrderEdit({ order, customers, areas }: any) {
         setProductResults(prev => ({ ...prev, [i]: results }));
     }
 
-    function getVariantStock(product: any, color: string, size: string): number {
+    function getVariantStock(product: Product, color: string, size: string): number {
         const variants = product?.variants ?? [];
         if (!color && !size) return product?.quantity ?? 0;
-        const v = variants.find((v: any) =>
+        const v = variants.find((v: Variant) =>
             v.color?.toUpperCase() === color?.toUpperCase() &&
             v.size?.toUpperCase()  === size?.toUpperCase()
         );
         return v ? Number(v.quantity) : 0;
     }
 
-    function availableSizesForColor(product: any, color: string): string[] {
+    function availableSizesForColor(product: Product, color: string): string[] {
         const variants = product?.variants ?? [];
         if (!variants.length) return product?.sizes ?? [];
         return (product?.sizes ?? []).filter((s: string) =>
-            variants.some((v: any) =>
+            variants.some((v: Variant) =>
                 v.color?.toUpperCase() === color?.toUpperCase() &&
                 v.size?.toUpperCase()  === s.toUpperCase() &&
                 v.quantity > 0
@@ -176,10 +210,10 @@ export default function OrderEdit({ order, customers, areas }: any) {
         );
     }
 
-    function selectProduct(i: number, product: any) {
+    function selectProduct(i: number, product: Product) {
         const items    = [...data.items];
         const variants = product.variants ?? [];
-        const firstAvail = variants.find((v: any) => v.quantity > 0);
+        const firstAvail = variants.find((v: Variant) => v.quantity > 0);
         const defaultColor = firstAvail?.color ?? (product.colors?.[0] ?? '');
         const defaultSize  = firstAvail?.size  ?? (product.sizes?.[0]  ?? '');
         items[i] = {
@@ -203,19 +237,19 @@ export default function OrderEdit({ order, customers, areas }: any) {
     }
 
     function removeItem(i: number) {
-        setData('items', data.items.filter((_: any, idx: number) => idx !== i));
+        setData('items', data.items.filter((_: OrderItem, idx: number) => idx !== i));
         setProductSearch(prev => { const n = { ...prev }; delete n[i]; return n; });
         setProductResults(prev => { const n = { ...prev }; delete n[i]; return n; });
         setSelectedProducts(prev => { const n = { ...prev }; delete n[i]; return n; });
     }
 
-    function updateItem(i: number, field: string, value: any) {
+    function updateItem(i: number, field: keyof OrderItem, value: unknown) {
         const items = [...data.items];
         items[i] = { ...items[i], [field]: value };
         setData('items', items);
     }
 
-    const itemsTotal   = data.items.reduce((sum: number, i: any) => sum + (Number(i.quantity) * Number(i.price)), 0);
+    const itemsTotal   = data.items.reduce((sum: number, i: OrderItem) => sum + (Number(i.quantity) * Number(i.price)), 0);
     const grandTotal   = itemsTotal - Number(data.discount) + Number(data.total_shipping_fee);
     const rawRemaining = grandTotal - Number(data.down_payment);
     const remaining    = Math.max(0, rawRemaining);
@@ -258,7 +292,7 @@ export default function OrderEdit({ order, customers, areas }: any) {
                                 onChange={e => setData('customer_id', e.target.value)}
                             >
                                 <option value="">Select customer...</option>
-                                {customers.map((c: any) => (
+                                {customers.map((c: Customer) => (
                                     <option key={c.id} value={c.id}>
                                         {c.name} {c.type === 'reseller' ? '(Reseller)' : ''}
                                     </option>
@@ -269,6 +303,15 @@ export default function OrderEdit({ order, customers, areas }: any) {
                         <div className="space-y-1">
                             <Label>Order date *</Label>
                             <Input type="date" value={data.order_date} onChange={e => setData('order_date', e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                            <Label>Status *</Label>
+                            <select className="w-full rounded-md border px-3 py-2 text-sm bg-background"
+                                value={data.status} onChange={e => setData('status', e.target.value)}>
+                                <option value="bought">Bought</option>
+                                <option value="keep">Keep</option>
+                                <option value="sold_out">Sold Out</option>
+                            </select>
                         </div>
                         <div className="space-y-1">
                             <Label>Courier</Label>
@@ -293,13 +336,12 @@ export default function OrderEdit({ order, customers, areas }: any) {
                                         <th className="text-left px-3 py-2 w-28">Size</th>
                                         <th className="text-left px-3 py-2">Qty</th>
                                         <th className="text-left px-3 py-2">Price</th>
-                                        <th className="text-left px-3 py-2 w-28">Status</th>
                                         <th className="text-right px-3 py-2">Total</th>
                                         <th className="px-3 py-2"></th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {data.items.map((item: any, i: number) => {
+                                    {data.items.map((item: OrderItem, i: number) => {
                                         const matched = selectedProducts[i];
                                         const colors  = matched?.colors ?? [];
                                         const sizes   = matched?.sizes  ?? [];
@@ -321,7 +363,7 @@ export default function OrderEdit({ order, customers, areas }: any) {
                                                     </div>
                                                     {(productResults[i] ?? []).length > 0 && (
                                                         <div className="absolute z-20 top-full left-0 w-72 bg-background border rounded-lg shadow-lg mt-1">
-                                                            {productResults[i].map((p: any) => (
+                                                            {productResults[i].map((p: Product) => (
                                                                 <button
                                                                     key={p.id}
                                                                     type="button"
@@ -368,7 +410,7 @@ export default function OrderEdit({ order, customers, areas }: any) {
                                                             <option value="">Color</option>
                                                             {colors.map((c: string) => {
                                                                 const hasStock = matched?.variants?.length
-                                                                    ? matched.variants.some((v: any) => v.color?.toUpperCase() === c.toUpperCase() && v.quantity > 0)
+                                                                    ? matched.variants.some((v: Variant) => v.color?.toUpperCase() === c.toUpperCase() && v.quantity > 0)
                                                                     : true;
                                                                 return (
                                                                     <option key={c} value={c}>
@@ -425,17 +467,6 @@ export default function OrderEdit({ order, customers, areas }: any) {
                                                         className="w-28"
                                                     />
                                                 </td>
-                                                <td className="px-2 py-2">
-                                                    <select
-                                                        className="w-full rounded-md border px-2 py-1.5 text-sm bg-background"
-                                                        value={item.status}
-                                                        onChange={e => updateItem(i, 'status', e.target.value)}
-                                                    >
-                                                        <option value="keep">Keep</option>
-                                                        <option value="bought">Bought</option>
-                                                        <option value="sold_out">Sold Out</option>
-                                                    </select>
-                                                </td>
                                                 <td className="px-3 py-2 text-right font-medium whitespace-nowrap">
                                                     {(Number(item.quantity) * Number(item.price)).toLocaleString()}
                                                 </td>
@@ -461,8 +492,8 @@ export default function OrderEdit({ order, customers, areas }: any) {
                             <select className="w-full rounded-md border px-3 py-2 text-sm bg-background"
                                 value={data.area_id}
                                 onChange={e => {
-                                    const area = areas.find((a: any) => String(a.id) === e.target.value);
-                                    setData(prev => ({
+                                    const area = areas.find((a: Area) => String(a.id) === e.target.value);
+                                    setData((prev) => ({
                                         ...prev,
                                         area_id:             e.target.value,
                                         shipping_fee_per_kg: area ? Number(area.price_per_kg) : 0,
@@ -470,7 +501,7 @@ export default function OrderEdit({ order, customers, areas }: any) {
                                 }}
                             >
                                 <option value="">— Select area —</option>
-                                {areas.map((area: any) => (
+                                {areas.map((area: Area) => (
                                     <option key={area.id} value={area.id}>
                                         {area.name} ({Number(area.price_per_kg).toLocaleString()}/kg)
                                     </option>
@@ -512,9 +543,9 @@ export default function OrderEdit({ order, customers, areas }: any) {
                     {/* Summary */}
                     <div className="rounded-lg border p-4 space-y-2 text-sm bg-muted/30">
                         {activePromo && (() => {
-                            const eligibleQty = data.items.reduce((s: number, item: any) =>
+                            const eligibleQty = data.items.reduce((s: number, item: OrderItem) =>
                                 s + (item.exclude_from_promo ? 0 : Number(item.quantity)), 0);
-                            const excludedQty = data.items.reduce((s: number, item: any) =>
+                            const excludedQty = data.items.reduce((s: number, item: OrderItem) =>
                                 s + (item.exclude_from_promo ? Number(item.quantity) : 0), 0);
                             return (
                                 <div className="text-xs bg-green-50 text-green-700 border border-green-200 rounded px-3 py-2 space-y-0.5">
@@ -576,4 +607,4 @@ export default function OrderEdit({ order, customers, areas }: any) {
     );
 }
 
-OrderEdit.layout = (page: any) => page;
+OrderEdit.layout = (page: React.ReactNode) => page;

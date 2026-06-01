@@ -3,14 +3,29 @@ import { useState } from 'react';
 import { Pencil, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
+// ── Types ────────────────────────────────────────────────────────────────────
+interface Trip        { id: number; name: string; location?: string; destination?: string; start_date?: string; end_date?: string; status: string }
+interface Customer    { id: number; name: string; phone?: string }
+interface Order       { id: number; customer?: Customer; order_date: string; status: string; total_price: number; remaining_payment: number; items: OrderItem[] }
+interface OrderItem   { id: number; product_name: string; color?: string; size?: string; quantity: number; price: number; total_price: number; status?: string }
+interface Payment     { id: number; amount: number; paid_at: string; note?: string }
+interface Allocation  { order_id: number; customer_name: string; order_date: string; qty_requested: number; qty_allocated: number; will_get: boolean; fully_filled: boolean }
+interface AllocRow    { po_item_id: number; product_name: string; color: string; size: string; qty_needed: number; qty_available: number; qty_shortfall: number; has_shortfall: boolean; allocations: Allocation[] }
+interface PurchItem   { product_id: number | null; product_name: string; color: string; size: string; qty_ordered: number; qty_received: number; cost_price: number; total_cost: number }
+interface Customer2   { name: string; quantity: number; order_id: number }
+interface SummaryRow  { product_name: string; color: string; size: string; total_qty: number; customers: Customer2[] }
+interface StatItem    { label: string; value: string | number; color: string }
+// ─────────────────────────────────────────────────────────────────────────────
+
+
 const STATUS_COLORS: Record<string, string> = {
     bought:   'bg-green-100 text-green-700',
     keep:     'bg-yellow-100 text-yellow-700',
     sold_out: 'bg-red-100 text-red-700',
 };
 
-export default function TripShow({ trip, productSummary, stats }: any) {
-    const { flash } = usePage().props as any;
+export default function TripShow({ trip, productSummary, stats }: { trip: Trip & { orders: Order[] }; productSummary: SummaryRow[]; stats: Record<string, number> }) {
+    const { flash } = usePage().props as { flash?: { success?: string; error?: string } };
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const [activeTab, setActiveTab] = useState<'summary' | 'orders'>('summary');
 
@@ -59,7 +74,7 @@ export default function TripShow({ trip, productSummary, stats }: any) {
                         { label: 'Sold Out',      value: stats.soldout_orders,                       color: 'text-red-500' },
                         { label: 'Total Value',   value: Number(stats.total_value).toLocaleString(),     color: '' },
                         { label: 'Remaining',     value: Number(stats.total_remaining).toLocaleString(), color: 'text-orange-500' },
-                    ].map(s => (
+                    ].map((s: StatItem) => (
                         <div key={s.label} className="rounded-xl border p-3 space-y-1">
                             <p className="text-xs text-muted-foreground">{s.label}</p>
                             <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
@@ -101,7 +116,7 @@ export default function TripShow({ trip, productSummary, stats }: any) {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {productSummary.map((row: any, idx: number) => {
+                                        {productSummary.map((row: SummaryRow, idx: number) => {
                                             const key = `${row.product_name}||${row.color}||${row.size}`;
                                             return (
                                                 <>
@@ -117,7 +132,7 @@ export default function TripShow({ trip, productSummary, stats }: any) {
                                                         <td className="px-4 py-3 text-right font-bold text-lg">{row.total_qty}</td>
                                                         <td className="px-4 py-3 text-right text-muted-foreground">{row.customers.length}</td>
                                                     </tr>
-                                                    {expanded[key] && row.customers.map((c: any, ci: number) => (
+                                                    {expanded[key] && row.customers.map((c: Customer2, ci: number) => (
                                                         <tr key={`${key}-${ci}`} className="border-b bg-muted/5">
                                                             <td></td>
                                                             <td colSpan={3} className="px-4 py-2 text-sm">
@@ -142,7 +157,7 @@ export default function TripShow({ trip, productSummary, stats }: any) {
                                         <tr className="border-t bg-muted/30 font-semibold">
                                             <td colSpan={4} className="px-4 py-3 text-sm">Total items to buy</td>
                                             <td className="px-4 py-3 text-right text-lg">
-                                                {productSummary.reduce((s: number, r: any) => s + r.total_qty, 0)}
+                                                {productSummary.reduce((s: number, r: SummaryRow) => s + r.total_qty, 0)}
                                             </td>
                                             <td></td>
                                         </tr>
@@ -171,7 +186,7 @@ export default function TripShow({ trip, productSummary, stats }: any) {
                                 {trip.orders.length === 0 && (
                                     <tr><td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">No orders in this trip yet.</td></tr>
                                 )}
-                                {trip.orders.map((o: any, idx: number) => (
+                                {trip.orders.map((o: Order, idx: number) => (
                                     <tr key={o.id} className={`border-b last:border-0 hover:bg-muted/30 ${idx % 2 === 0 ? '' : 'bg-muted/10'}`}>
                                         <td className="px-6 py-3.5 text-muted-foreground">
                                             {new Date(o.order_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -202,4 +217,4 @@ export default function TripShow({ trip, productSummary, stats }: any) {
     );
 }
 
-TripShow.layout = (page: any) => page;
+TripShow.layout = (page: React.ReactNode) => page;

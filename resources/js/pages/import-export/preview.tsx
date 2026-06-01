@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { CheckCircle, AlertCircle } from 'lucide-react';
 
 export default function ImportPreview({ preview, totalRows }: any) {
-    function confirm() {
+    function handleConfirm() {
         router.post('/import-export/confirm');
     }
 
@@ -69,7 +69,7 @@ export default function ImportPreview({ preview, totalRows }: any) {
                 </div>
 
                 <div className="flex gap-3">
-                    <Button onClick={confirm} className="bg-green-600 hover:bg-green-700">
+                    <Button onClick={handleConfirm} className="bg-green-600 hover:bg-green-700">
                         ✓ Confirm & Import {totalRows} rows
                     </Button>
                     <Button variant="outline" onClick={() => router.visit('/import-export')}>
